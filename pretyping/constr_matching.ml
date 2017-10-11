@@ -249,8 +249,8 @@ let matches_core env sigma allow_bound_rels
       | PSort ps, Sort s ->
 
         begin match ps, ESorts.kind sigma s with
-        | GProp, Prop Null -> subst
-        | GSet, Prop Pos -> subst
+        | GProp, Prop -> subst
+        | GSet, Set -> subst
         | GType _, Type _ -> subst
         | _ -> raise PatternMatchingFailure
         end

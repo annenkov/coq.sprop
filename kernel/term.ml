@@ -17,11 +17,10 @@ open Constr
 (**         Redeclaration of types from module Constr                 *)
 (**********************************************************************)
 
-type contents = Sorts.contents = Pos | Null
-
 type sorts = Sorts.t =
-  | Prop of contents       (** Prop and Set *)
-  | Type of Univ.Universe.t  (** Type *)
+  | Prop
+  | Set
+  | Type of Univ.Universe.t
 
 type sorts_family = Sorts.family = InProp | InSet | InType
 
@@ -168,6 +167,7 @@ let hcons_types = Constr.hcons
 
 exception DestKO = DestKO
 (* Destructs a de Bruijn index *)
+
 let destRel = destRel
 let destMeta = destRel
 let isMeta = isMeta
