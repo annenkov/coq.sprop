@@ -844,6 +844,7 @@ let sort_info_of_level_info (info: Misctypes.level_info) : (Libnames.reference *
 
 let glob_sort_of_level (level: Misctypes.glob_level) : Misctypes.glob_sort =
   match level with
+  | Misctypes.GSProp -> Misctypes.GSProp
   | Misctypes.GProp -> Misctypes.GProp
   | Misctypes.GSet -> Misctypes.GSet
   | Misctypes.GType info -> Misctypes.GType [sort_info_of_level_info info]

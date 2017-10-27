@@ -110,6 +110,7 @@ let print_pure_constr csr =
   and sort_display = function
     | Set -> print_string "Set"
     | Prop -> print_string "Prop"
+    | SProp -> print_string "SProp"
     | Type u -> print_string "Type("; chk_pp (Univ.pr_uni u); print_string ")"
 
   and name_display = function

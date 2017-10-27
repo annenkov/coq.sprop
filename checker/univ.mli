@@ -47,6 +47,9 @@ sig
   val make : Level.t -> t
   (** Create a universe representing the given level. *)
 
+  val sprop : t
+
+  val is_sprop : t -> bool
 end
 
 type universe = Universe.t

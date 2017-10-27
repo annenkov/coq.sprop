@@ -13,7 +13,7 @@
 To ensure this file is up-to-date, 'make' now compares the md5 of cic.mli
 with a copy we maintain here:
 
-MD5 a881a536847259d92b6ccd9004b5ef3c checker/cic.mli
+MD5 d4da21877c72174f97d4af78cee9fe7b checker/cic.mli
 
 *)
 
@@ -97,7 +97,7 @@ let v_cons = v_tuple "constructor" [|v_ind;Int|]
 
 (** kernel/univ *)
 
-let v_raw_level = v_sum "raw_level" 2 (* Prop, Set *) 
+let v_raw_level = v_sum "raw_level" 3 (* SProp, Prop, Set *)
   [|(*Level*)[|Int;v_dp|]; (*Var*)[|Int|]|]
 let v_level = v_tuple "level" [|Int;v_raw_level|] 
 let v_expr = v_tuple "levelexpr" [|v_level;Int|]
@@ -120,8 +120,8 @@ let v_context_set = v_tuple "universe_context_set" [|v_hset v_level;v_cstrs|]
 
 (** kernel/term *)
 
-let v_sort = v_sum "sort" 2 (*Prop, Set*) [|[|v_univ(*Type*)|]|]
-let v_sortfam = v_enum "sorts_family" 3
+let v_sort = v_sum "sort" 3 (*SProp, Prop, Set*) [|[|v_univ(*Type*)|]|]
+let v_sortfam = v_enum "sorts_family" 4
 
 let v_puniverses v = v_tuple "punivs" [|v;v_instance|]
 
