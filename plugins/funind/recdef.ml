@@ -195,7 +195,7 @@ let (value_f: Constr.t list -> global_reference -> Constr.t) =
       )
     in
     let context = List.map
-      (fun (x, c) -> LocalAssum (Name x, c)) (List.combine rev_x_id_l (List.rev al))
+      (fun (x, c) -> LocalAssum (Name x, Sorts.Relevant, c)) (List.combine rev_x_id_l (List.rev al))
     in
     let env = Environ.push_rel_context context (Global.env ()) in
     let glob_body =
@@ -324,9 +324,9 @@ let check_not_nested sigma forbidden e =
                (str "check_not_nested: failure " ++ Id.print x)
       | Meta _ | Evar _ | Sort _ -> ()
       | Cast(e,_,t) -> check_not_nested e;check_not_nested t
-      | Prod(_,t,b) -> check_not_nested t;check_not_nested b
-      | Lambda(_,t,b) -> check_not_nested t;check_not_nested b
-      | LetIn(_,v,t,b) -> check_not_nested t;check_not_nested b;check_not_nested v
+      | Prod(_,_,t,b) -> check_not_nested t;check_not_nested b
+      | Lambda(_,_,t,b) -> check_not_nested t;check_not_nested b
+      | LetIn(_,_,v,t,b) -> check_not_nested t;check_not_nested b;check_not_nested v
       | App(f,l) -> check_not_nested f;Array.iter check_not_nested l
       | Proj (p,c) -> check_not_nested c
       | Const _ -> ()
@@ -399,7 +399,7 @@ let add_vars sigma forbidden e =
 let treat_case forbid_new_ids to_intros finalize_tac nb_lam e infos : tactic = 
   fun g -> 
     let rev_context,b = decompose_lam_n (project g) nb_lam e in
-    let ids = List.fold_left (fun acc (na,_) -> 	
+    let ids = List.fold_left (fun acc (na,_,_) ->
       let pre_id = 
 	match na with 
 	  | Name x -> x 
@@ -444,7 +444,7 @@ let rec travel_aux jinfo continuation_tac (expr_info:constr infos) g =
   match EConstr.kind sigma expr_info.info with 
     | CoFix _ | Fix _ -> user_err Pp.(str "Function cannot treat local fixpoint or cofixpoint")
     | Proj _ -> user_err Pp.(str "Function cannot treat projections")
-    | LetIn(na,b,t,e) -> 
+    | LetIn(na,r,b,t,e) ->
       begin
 	let new_continuation_tac = 
 	  jinfo.letiN (na,b,t,e) expr_info continuation_tac
@@ -461,7 +461,7 @@ let rec travel_aux jinfo continuation_tac (expr_info:constr infos) g =
 	with e when CErrors.noncritical e ->
           user_err ~hdr:"Recdef.travel" (str "the term " ++ Printer.pr_leconstr_env (pf_env g) sigma expr_info.info ++ str " can not contain a recursive call to " ++ Id.print expr_info.f_id)
       end
-    | Lambda(n,t,b) -> 
+    | Lambda(n,r,t,b) ->
       begin
 	try
 	  check_not_nested sigma (expr_info.f_id::expr_info.forbidden_ids) expr_info.info;
@@ -888,9 +888,9 @@ let rec make_rewrite_list expr_info max = function
           let sigma = project g in
 	  let t_eq = compute_renamed_type g (mkVar hp) in
 	  let k,def =
-	    let k_na,_,t = destProd sigma t_eq in
-	    let _,_,t  = destProd sigma t in
-	    let def_na,_,_ = destProd sigma t in
+            let k_na,_,_,t = destProd sigma t_eq in
+            let _,_,_,t  = destProd sigma t in
+            let def_na,_,_,_ = destProd sigma t in
 	    Nameops.Name.get_id k_na,Nameops.Name.get_id def_na
 	  in
 	  Proofview.V82.of_tactic (general_rewrite_bindings false Locus.AllOccurrences
@@ -914,9 +914,9 @@ let make_rewrite expr_info l hp max =
           let sigma = project g in
 	  let t_eq = compute_renamed_type g (mkVar hp) in
 	  let k,def =
-	    let k_na,_,t = destProd sigma t_eq in
-	    let _,_,t  = destProd sigma t in
-	    let def_na,_,_ = destProd sigma t in
+            let k_na,_,_,t = destProd sigma t_eq in
+            let _,_,_,t  = destProd sigma t in
+            let def_na,_,_,_ = destProd sigma t in
 	    Nameops.Name.get_id k_na,Nameops.Name.get_id def_na
 	  in
 	 observe_tac (str "general_rewrite_bindings")
@@ -1051,7 +1051,7 @@ let compute_terminate_type nb_args func =
   let open Term in
   let open Constr in
   let open CVars in
-  let _,a_arrow_b,_ = destLambda(def_of_const (constr_of_global func)) in
+  let _,_,a_arrow_b,_ = destLambda(def_of_const (constr_of_global func)) in
   let rev_args,b = decompose_prod_n nb_args a_arrow_b in
   let left =
     mkApp(delayed_force iter_rd,
@@ -1065,20 +1065,19 @@ let compute_terminate_type nb_args func =
   let right = mkRel 5 in
   let delayed_force c = EConstr.Unsafe.to_constr (delayed_force c) in
   let equality = mkApp(delayed_force eq, [|lift 5 b; left; right|]) in
-  let result = (mkProd ((Name def_id) , lift 4 a_arrow_b, equality)) in
+  let result = (mkProd ((Name def_id), Sorts.Relevant, lift 4 a_arrow_b, equality)) in
   let cond = mkApp(delayed_force lt, [|(mkRel 2); (mkRel 1)|]) in
   let nb_iter =
     mkApp(delayed_force ex,
 	  [|delayed_force nat;
 	    (mkLambda
-	       (Name
-		  p_id,
+               (Name p_id,Sorts.Relevant,
 		  delayed_force nat,
-		  (mkProd (Name k_id, delayed_force nat,
-			   mkArrow cond result))))|])in
+                  (mkProd (Name k_id, Sorts.Relevant, delayed_force nat,
+                           mkArrow cond Sorts.Relevant result))))|])in
   let value = mkApp(constr_of_global (Util.delayed_force coq_sig_ref),
 		    [|b;
-		      (mkLambda (Name v_id, b, nb_iter))|]) in
+                      (mkLambda (Name v_id, Sorts.Relevant, b, nb_iter))|]) in
   compose_prod rev_args value
 
 
@@ -1164,7 +1163,7 @@ let rec instantiate_lambda sigma t l =
   match l with
   | [] -> t
   | a::l ->
-      let (_, _, body) = destLambda sigma t in
+      let (_, _, _, body) = destLambda sigma t in
       instantiate_lambda sigma (subst1 a body) l
 
 let whole_start (concl_tac:tactic) nb_args is_mes func input_type relation rec_arg_num  : tactic =
@@ -1174,7 +1173,7 @@ let whole_start (concl_tac:tactic) nb_args is_mes func input_type relation rec_a
       let ids = Termops.ids_of_named_context (pf_hyps g) in
       let func_body = (def_of_const (constr_of_global func)) in
       let func_body = EConstr.of_constr func_body in
-      let (f_name, _, body1) = destLambda sigma func_body in
+      let (f_name, _, _, body1) = destLambda sigma func_body in
       let f_id =
 	match f_name with
 	  | Name f_id -> next_ident_away_in_goal f_id ids
@@ -1183,7 +1182,7 @@ let whole_start (concl_tac:tactic) nb_args is_mes func input_type relation rec_a
       let n_names_types,_ = decompose_lam_n sigma nb_args body1 in
       let n_ids,ids =
 	List.fold_left
-	  (fun (n_ids,ids) (n_name,_) ->
+          (fun (n_ids,ids) (n_name,_,_) ->
 	     match n_name with
 	       | Name id ->
 		   let n_id = next_ident_away_in_goal id ids in
@@ -1244,7 +1243,7 @@ let build_and_l sigma l =
     mkApp(EConstr.of_constr and_constr,[|p1;p2|]) in
   let rec is_well_founded t = 
     match EConstr.kind sigma t with 
-      | Prod(_,_,t') -> is_well_founded t'
+      | Prod(_,_,_,t') -> is_well_founded t'
       | App(_,_) -> 
 	let (f,_) = decompose_app sigma t in 
 	EConstr.eq_constr sigma f (well_founded ())
@@ -1281,12 +1280,12 @@ let is_rec_res id =
 let clear_goals sigma =
   let rec clear_goal t =
     match EConstr.kind sigma t with
-      | Prod(Name id as na,t',b) ->
+      | Prod(Name id as na,r,t',b) ->
 	  let b' = clear_goal b in
 	  if noccurn sigma 1 b' && (is_rec_res id)
 	  then Vars.lift (-1) b'
 	  else if b' == b then t
-	  else mkProd(na,t',b')
+          else mkProd(na,r,t',b')
       | _ -> EConstr.map sigma clear_goal t
   in
   List.map clear_goal
@@ -1531,7 +1530,7 @@ let recursive_definition is_mes function_name rec_impls type_of_f r rec_arg_num 
   let evd = Evd.from_env env in
   let evd, function_type = interp_type_evars env evd type_of_f in
   let function_type = EConstr.Unsafe.to_constr function_type in
-  let env = push_named (Context.Named.Declaration.LocalAssum (function_name,function_type)) env in
+  let env = push_named (Context.Named.Declaration.LocalAssum (function_name,Sorts.Relevant,function_type)) env in
   (* Pp.msgnl (str "function type := " ++ Printer.pr_lconstr function_type);  *)
   let evd, ty = interp_type_evars env evd ~impls:rec_impls eq in
   let ty = EConstr.Unsafe.to_constr ty in
@@ -1541,7 +1540,7 @@ let recursive_definition is_mes function_name rec_impls type_of_f r rec_arg_num 
   let equation_lemma_type = EConstr.Unsafe.to_constr equation_lemma_type in
  (* Pp.msgnl (str "lemma type := " ++ Printer.pr_lconstr equation_lemma_type ++ fnl ()); *)
   let res_vars,eq' = decompose_prod equation_lemma_type in
-  let env_eq' = Environ.push_rel_context (List.map (fun (x,y) -> LocalAssum (x,y)) res_vars) env in
+  let env_eq' = Environ.push_rel_context (List.map (fun (x,r,y) -> LocalAssum (x,r,y)) res_vars) env in
   let eq' = nf_zeta env_eq' (EConstr.of_constr eq') in
   let eq' = EConstr.Unsafe.to_constr eq' in
   let res =
@@ -1550,12 +1549,12 @@ let recursive_definition is_mes function_name rec_impls type_of_f r rec_arg_num 
 (*     Pp.msgnl (str "eq' := " ++ str (string_of_int rec_arg_num)); *)
     match Constr.kind eq' with
       | App(e,[|_;_;eq_fix|]) ->
-	  mkLambda (Name function_name,function_type,subst_var function_name (compose_lam res_vars  eq_fix))
+          mkLambda (Name function_name,Sorts.Relevant,function_type,subst_var function_name (compose_lam res_vars  eq_fix))
       | _ -> failwith "Recursive Definition (res not eq)"
   in
   let pre_rec_args,function_type_before_rec_arg = decompose_prod_n (rec_arg_num - 1) function_type in
-  let (_, rec_arg_type, _) = destProd function_type_before_rec_arg in
-  let arg_types = List.rev_map snd (fst (decompose_prod_n (List.length res_vars) function_type)) in
+  let (_, _, rec_arg_type, _) = destProd function_type_before_rec_arg in
+  let arg_types = List.rev_map pi3 (fst (decompose_prod_n (List.length res_vars) function_type)) in
   let equation_id = add_suffix function_name "_equation" in
   let functional_id =  add_suffix function_name "_F" in
   let term_id = add_suffix function_name "_terminate" in
@@ -1565,7 +1564,7 @@ let recursive_definition is_mes function_name rec_impls type_of_f r rec_arg_num 
   in
   (* Refresh the global universes, now including those of _F *)
   let evd = Evd.from_env (Global.env ()) in
-  let env_with_pre_rec_args = push_rel_context(List.map (function (x,t) -> LocalAssum (x,t)) pre_rec_args) env in
+  let env_with_pre_rec_args = push_rel_context(List.map (function (x,r,t) -> LocalAssum (x,r,t)) pre_rec_args) env in
   let relation, evuctx =
     interp_constr env_with_pre_rec_args evd r
   in

@@ -179,7 +179,7 @@ let cs_pattern_of_constr env t =
           with e when CErrors.noncritical e -> raise Not_found
 	end
     | Rel n -> Default_cs, Some n, []
-    | Prod (_,a,b) when Vars.noccurn 1 b -> Prod_cs, None, [a; Vars.lift (-1) b]
+    | Prod (_,_,a,b) when Vars.noccurn 1 b -> Prod_cs, None, [a; Vars.lift (-1) b]
     | Proj (p, c) ->
       let { Environ.uj_type = ty } = Typeops.infer env c in
       let _, params = Inductive.find_rectype env ty in
@@ -210,9 +210,9 @@ let compute_canonical_projections warn (con,ind) =
   let v = (mkConstU (con,u)) in
   let c = Environ.constant_value_in env (con,u) in
   let sign,t = Reductionops.splay_lam env Evd.empty (EConstr.of_constr c) in
-  let sign = List.map (on_snd EConstr.Unsafe.to_constr) sign in
+  let sign = List.map (on_pi3 EConstr.Unsafe.to_constr) sign in
   let t = EConstr.Unsafe.to_constr t in
-  let lt = List.rev_map snd sign in
+  let lt = List.rev_map pi3 sign in
   let args = snd (decompose_app t) in
   let { s_EXPECTEDPARAM = p; s_PROJ = lpj; s_PROJKIND = kl } =
     lookup_structure ind in

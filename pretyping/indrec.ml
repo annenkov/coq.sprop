@@ -42,18 +42,18 @@ exception RecursionSchemeError of recursion_scheme_error
 
 let named_hd env t na = named_hd env Evd.empty (EConstr.of_constr t) na
 let name_assumption env = function
-| LocalAssum (na,t) -> LocalAssum (named_hd env t na, t)
-| LocalDef (na,c,t) -> LocalDef (named_hd env c na, c, t)
+| LocalAssum (na,r,t) -> LocalAssum (named_hd env t na, r, t)
+| LocalDef (na,r,c,t) -> LocalDef (named_hd env c na, r, c, t)
 
 let mkLambda_or_LetIn_name env d b = mkLambda_or_LetIn (name_assumption env d) b
 let mkProd_or_LetIn_name env d b = mkProd_or_LetIn (name_assumption env d) b
-let mkLambda_name env (n,a,b) = mkLambda_or_LetIn_name env (LocalAssum (n,a)) b
-let mkProd_name env (n,a,b) = mkProd_or_LetIn_name env (LocalAssum (n,a)) b
+let mkLambda_name env (n,r,a,b) = mkLambda_or_LetIn_name env (LocalAssum (n,r,a)) b
+let mkProd_name env (n,r,a,b) = mkProd_or_LetIn_name env (LocalAssum (n,r,a)) b
 let it_mkProd_or_LetIn_name env b l = List.fold_left (fun c d -> mkProd_or_LetIn_name env d c) b l
 let it_mkLambda_or_LetIn_name env b l = List.fold_left (fun c d -> mkLambda_or_LetIn_name env d c) b l
 
 let make_prod_dep dep env = if dep then mkProd_name env else mkProd
-let mkLambda_string s t c = mkLambda (Name (Id.of_string s), t, c)
+let mkLambda_string s r t c = mkLambda (Name (Id.of_string s), r, t, c)
 
 
 (*******************************************)
@@ -78,6 +78,7 @@ let mis_make_case_com dep env sigma (ind, u as pind) (mib,mip as specif) kind =
   let indf = make_ind_family(pind, Context.Rel.to_extended_list mkRel 0 lnamespar) in
   let constrs = get_constructors env indf in
   let projs = get_projections env indf in
+  let relevance = Sorts.relevance_of_sort_family kind in
 
   let () = if Option.is_empty projs then check_privacy_block mib in
   let () = 
@@ -97,11 +98,13 @@ let mis_make_case_com dep env sigma (ind, u as pind) (mib,mip as specif) kind =
       let nbprod = k+1 in
 
       let indf' = lift_inductive_family nbprod indf in
-      let arsign,_ = get_arity env indf' in
+      let arsign,sort = get_arity env indf' in
+      let r = Sorts.relevance_of_sort_family sort in
       let depind = build_dependent_inductive env indf' in
-      let deparsign = LocalAssum (Anonymous,depind)::arsign in
+      let deparsign = LocalAssum (Anonymous,r,depind)::arsign in
 
-      let ci = make_case_info env (fst pind) RegularStyle in
+      let rci = relevance in
+      let ci = make_case_info env (fst pind) rci RegularStyle in
       let pbody =
         appvect
           (mkRel (ndepar + nbprod),
@@ -110,7 +113,7 @@ let mis_make_case_com dep env sigma (ind, u as pind) (mib,mip as specif) kind =
       let p =
 	it_mkLambda_or_LetIn_name env'
 	  ((if dep then mkLambda_name env' else mkLambda)
-	   (Anonymous,depind,pbody))
+           (Anonymous,r,depind,pbody))
           arsign
       in
       let obj = 
@@ -131,16 +134,16 @@ let mis_make_case_com dep env sigma (ind, u as pind) (mib,mip as specif) kind =
     else
       let cs = lift_constructor (k+1) constrs.(k) in
       let t = build_branch_type env sigma dep (mkRel (k+1)) cs in
-      mkLambda_string "f" t
-	(add_branch (push_rel (LocalAssum (Anonymous, t)) env) (k+1))
+      mkLambda_string "f" relevance t
+        (add_branch (push_rel (LocalAssum (Anonymous, relevance, t)) env) (k+1))
   in
   let (sigma, s) = Evd.fresh_sort_in_family ~rigid:Evd.univ_flexible_alg env sigma kind in
   let typP = make_arity env' sigma dep indf s in
   let typP = EConstr.Unsafe.to_constr typP in
   let c = 
     it_mkLambda_or_LetIn_name env
-    (mkLambda_string "P" typP
-     (add_branch (push_rel (LocalAssum (Anonymous,typP)) env') 0)) lnamespar
+    (mkLambda_string "P" relevance typP
+     (add_branch (push_rel (LocalAssum (Anonymous,Sorts.Relevant,typP)) env') 0)) lnamespar
   in
   (sigma, c)
 
@@ -170,12 +173,12 @@ let type_rec_branch is_rec dep env sigma (vargs,depPvect,decP) tyi cs recargs =
       let p' = EConstr.Unsafe.to_constr p' in
       let largs = List.map EConstr.Unsafe.to_constr largs in
       match kind p' with
-	| Prod (n,t,c) ->
-	    let d = LocalAssum (n,t) in
-	    make_prod env (n,t,prec (push_rel d env) (i+1) (d::sign) c)
-	| LetIn (n,b,t,c) when List.is_empty largs ->
-	    let d = LocalDef (n,b,t) in
-	    mkLetIn (n,b,t,prec (push_rel d env) (i+1) (d::sign) c)
+        | Prod (n,r,t,c) ->
+            let d = LocalAssum (n,r,t) in
+            make_prod env (n,r,t,prec (push_rel d env) (i+1) (d::sign) c)
+        | LetIn (n,r,b,t,c) when List.is_empty largs ->
+            let d = LocalDef (n,r,b,t) in
+            mkLetIn (n,r,b,t,prec (push_rel d env) (i+1) (d::sign) c)
      	| Ind (_,_) ->
 	    let realargs = List.skipn nparams largs in
 	    let base = applist (lift i pk,realargs) in
@@ -194,7 +197,7 @@ let type_rec_branch is_rec dep env sigma (vargs,depPvect,decP) tyi cs recargs =
   in
   let rec process_constr env i c recargs nhyps li =
     if nhyps > 0 then match kind c with
-      | Prod (n,t,c_0) ->
+      | Prod (n,r,t,c_0) ->
           let (optionpos,rest) =
 	    match recargs with
 	      | [] -> None,[]
@@ -207,23 +210,23 @@ let type_rec_branch is_rec dep env sigma (vargs,depPvect,decP) tyi cs recargs =
           (match optionpos with
 	     | None ->
 		 make_prod env
-		   (n,t,
-		    process_constr (push_rel (LocalAssum (n,t)) env) (i+1) c_0 rest
+                   (n,r,t,
+                    process_constr (push_rel (LocalAssum (n,r,t)) env) (i+1) c_0 rest
 		      (nhyps-1) (i::li))
              | Some(dep',p) ->
 		 let nP = lift (i+1+decP) p in
-                 let env' = push_rel (LocalAssum (n,t)) env in
+                 let env' = push_rel (LocalAssum (n,r,t)) env in
 		 let t_0 = process_pos env' dep' nP (lift 1 t) in
 		 make_prod_dep (dep || dep') env
-                   (n,t,
-		    mkArrow t_0
+                   (n,r,t,
+                    mkArrow t_0 r (* TODO check if t_0 has same relevance as t *)
 		      (process_constr
-			(push_rel (LocalAssum (Anonymous,t_0)) env')
+                        (push_rel (LocalAssum (Anonymous,r,t_0)) env')
 			 (i+2) (lift 1 c_0) rest (nhyps-1) (i::li))))
-      | LetIn (n,b,t,c_0) ->
-	  mkLetIn (n,b,t,
+      | LetIn (n,r,b,t,c_0) ->
+          mkLetIn (n,r,b,t,
 		   process_constr
-		     (push_rel (LocalDef (n,b,t)) env)
+                     (push_rel (LocalDef (n,r,b,t)) env)
 		     (i+1) c_0 recargs (nhyps-1) li)
       | _ -> assert false
     else
@@ -249,12 +252,12 @@ let make_rec_branch_arg env sigma (nparrec,fvect,decF) f cstr recargs =
       let p' = EConstr.Unsafe.to_constr p' in
       let largs = List.map EConstr.Unsafe.to_constr largs in
       match kind p' with
-	| Prod (n,t,c) ->
-	    let d = LocalAssum (n,t) in
-	    mkLambda_name env (n,t,prec (push_rel d env) (i+1) (d::hyps) c)
-	| LetIn (n,b,t,c) when List.is_empty largs ->
-	    let d = LocalDef (n,b,t) in
-	    mkLetIn (n,b,t,prec (push_rel d env) (i+1) (d::hyps) c)
+        | Prod (n,r,t,c) ->
+            let d = LocalAssum (n,r,t) in
+            mkLambda_name env (n,r,t,prec (push_rel d env) (i+1) (d::hyps) c)
+        | LetIn (n,r,b,t,c) when List.is_empty largs ->
+            let d = LocalDef (n,r,b,t) in
+            mkLetIn (n,r,b,t,prec (push_rel d env) (i+1) (d::hyps) c)
      	| Ind _ ->
             let realargs = List.skipn nparrec largs
             and arg = appvect (mkRel (i+1), Context.Rel.to_extended_vect mkRel 0 hyps) in
@@ -269,7 +272,7 @@ let make_rec_branch_arg env sigma (nparrec,fvect,decF) f cstr recargs =
   in
   (* ici, cstrprods est la liste des produits du constructeur instantié *)
   let rec process_constr env i f = function
-    | (LocalAssum (n,t) as d)::cprest, recarg::rest ->
+    | (LocalAssum (n,r,t) as d)::cprest, recarg::rest ->
         let optionpos =
 	  match dest_recarg recarg with
             | Norec   -> None
@@ -279,7 +282,7 @@ let make_rec_branch_arg env sigma (nparrec,fvect,decF) f cstr recargs =
         (match optionpos with
            | None ->
 	       mkLambda_name env
-		 (n,t,process_constr (push_rel d env) (i+1)
+                 (n,r,t,process_constr (push_rel d env) (i+1)
 		    (EConstr.Unsafe.to_constr (whd_beta Evd.empty (EConstr.of_constr (applist (lift 1 f, [(mkRel 1)])))))
 		    (cprest,rest))
            | Some(_,f_0) ->
@@ -287,12 +290,12 @@ let make_rec_branch_arg env sigma (nparrec,fvect,decF) f cstr recargs =
                let env' = push_rel d env in
 	       let arg = process_pos env' nF (lift 1 t) in
                mkLambda_name env
-		 (n,t,process_constr env' (i+1)
+                 (n,r,t,process_constr env' (i+1)
 		    (EConstr.Unsafe.to_constr (whd_beta Evd.empty (EConstr.of_constr (applist (lift 1 f, [(mkRel 1); arg])))))
 		    (cprest,rest)))
-    | (LocalDef (n,c,t) as d)::cprest, rest ->
+    | (LocalDef (n,r,c,t) as d)::cprest, rest ->
 	mkLetIn
-	  (n,c,t,
+          (n,r,c,t,
 	   process_constr (push_rel d env) (i+1) (lift 1 f)
 	     (cprest,rest))
     | [],[] -> f
@@ -328,25 +331,26 @@ let mis_make_indrec env sigma listdepkind mib u =
   let recargpar = recargparn [] (nparams-nparrec) in
   let make_one_rec p =
     let makefix nbconstruct =
-      let rec mrec i ln ltyp ldef = function
-	| ((indi,u),mibi,mipi,dep,_)::rest ->
-	    let tyi = snd indi in
-	    let nctyi =
-              Array.length mipi.mind_consnames in (* nb constructeurs du type*)
+      let rec mrec i ln lrelevance ltyp ldef = function
+        | ((indi,u),mibi,mipi,dep,target_sort)::rest ->
+          let tyi = snd indi in
+          let nctyi =
+            Array.length mipi.mind_consnames in (* nb constructeurs du type*)
 
-            (* arity in the context of the fixpoint, i.e.
+          (* arity in the context of the fixpoint, i.e.
                P1..P_nrec f1..f_nbconstruct *)
-	    let args = Context.Rel.to_extended_list mkRel (nrec+nbconstruct) lnamesparrec in
-	    let indf = make_ind_family((indi,u),args) in
+          let args = Context.Rel.to_extended_list mkRel (nrec+nbconstruct) lnamesparrec in
+          let indf = make_ind_family((indi,u),args) in
 
-	    let arsign,_ = get_arity env indf in
-	    let depind = build_dependent_inductive env indf in
-	    let deparsign = LocalAssum (Anonymous,depind)::arsign in
+          let arsign,s = get_arity env indf in
+          let r = Sorts.relevance_of_sort_family s in
+          let depind = build_dependent_inductive env indf in
+          let deparsign = LocalAssum (Anonymous,r,depind)::arsign in
 
-	    let nonrecpar = Context.Rel.length lnonparrec in
-	    let larsign = Context.Rel.length deparsign in
-	    let ndepar = larsign - nonrecpar in
-	    let dect = larsign+nrec+nbconstruct in
+          let nonrecpar = Context.Rel.length lnonparrec in
+          let larsign = Context.Rel.length deparsign in
+          let ndepar = larsign - nonrecpar in
+          let dect = larsign+nrec+nbconstruct in
 
             (* constructors in context of the Cases expr, i.e.
                P1..P_nrec f1..f_nbconstruct F_1..F_nrec a_1..a_nar x:I *)
@@ -374,9 +378,10 @@ let mis_make_indrec env sigma listdepkind mib u =
 
 	    (* Predicate in the context of the case *)
 
-	    let depind' = build_dependent_inductive env indf' in
-	    let arsign',_ = get_arity env indf' in
-	    let deparsign' = LocalAssum (Anonymous,depind')::arsign' in
+            let depind' = build_dependent_inductive env indf' in
+            let arsign',s = get_arity env indf' in
+            let r = Sorts.relevance_of_sort_family s in
+            let deparsign' = LocalAssum (Anonymous,r,depind')::arsign' in
 
 	    let pargs =
 	      let nrpar = Context.Rel.to_extended_list mkRel (2*ndepar) lnonparrec
@@ -387,13 +392,15 @@ let mis_make_indrec env sigma listdepkind mib u =
 	    in
 
 	    (* body of i-th component of the mutual fixpoint *)
+            let target_relevance = Sorts.relevance_of_sort_family target_sort in
 	    let deftyi =
-	      let ci = make_case_info env indi RegularStyle in
+              let rci = target_relevance in
+              let ci = make_case_info env indi rci RegularStyle in
 	      let concl = applist (mkRel (dect+j+ndepar),pargs) in
 	      let pred =
 		it_mkLambda_or_LetIn_name env
 		  ((if dep then mkLambda_name env else mkLambda)
-		      (Anonymous,depind',concl))
+                      (Anonymous,r,depind',concl))
 		  arsign'
 	      in
 	      let obj =
@@ -415,20 +422,21 @@ let mis_make_indrec env sigma listdepkind mib u =
 	      in it_mkProd_or_LetIn_name env
 		concl
 		deparsign
-	    in
-	      mrec (i+nctyi) (Context.Rel.nhyps arsign ::ln) (typtyi::ltyp)
+            in
+              mrec (i+nctyi) (Context.Rel.nhyps arsign ::ln) (target_relevance::lrelevance) (typtyi::ltyp)
                 (deftyi::ldef) rest
         | [] ->
 	    let fixn = Array.of_list (List.rev ln) in
             let fixtyi = Array.of_list (List.rev ltyp) in
             let fixdef = Array.of_list (List.rev ldef) in
+            let lrelevance = CArray.rev_of_list lrelevance in
             let names = Array.make nrec (Name(Id.of_string "F")) in
-	      mkFix ((fixn,p),(names,fixtyi,fixdef))
+              mkFix ((fixn,p),(names,lrelevance,fixtyi,fixdef))
       in
-	mrec 0 [] [] []
+        mrec 0 [] [] [] []
     in
     let rec make_branch env i = function
-      | ((indi,u),mibi,mipi,dep,_)::rest ->
+      | ((indi,u),mibi,mipi,dep,sfam)::rest ->
           let tyi = snd indi in
 	  let nconstr = Array.length mipi.mind_consnames in
 	  let rec onerec env j =
@@ -442,9 +450,10 @@ let mis_make_indrec env sigma listdepkind mib u =
 	      let p_0 =
 		type_rec_branch
                   true dep env !evdref (vargs,depPvec,i+j) tyi cs recarg
-	      in
-		mkLambda_string "f" p_0
-		  (onerec (push_rel (LocalAssum (Anonymous,p_0)) env) (j+1))
+              in
+              let r_0 = Sorts.relevance_of_sort_family sfam in
+                mkLambda_string "f" r_0 p_0
+                  (onerec (push_rel (LocalAssum (Anonymous,r_0,p_0)) env) (j+1))
 	  in onerec env 0
       | [] ->
 	  makefix i listdepkind
@@ -457,9 +466,10 @@ let mis_make_indrec env sigma listdepkind mib u =
 	      evdref kinds 
 	  in
 	  let typP = make_arity env !evdref dep indf s in
-	  let typP = EConstr.Unsafe.to_constr typP in
-	    mkLambda_string "P" typP
-	      (put_arity (push_rel (LocalAssum (Anonymous,typP)) env) (i+1) rest)
+          let typP = EConstr.Unsafe.to_constr typP in
+          let rP = Sorts.relevance_of_sort_family kinds in
+            mkLambda_string "P" rP typP
+              (put_arity (push_rel (LocalAssum (Anonymous,rP,typP)) env) (i+1) rest)
       | [] ->
 	  make_branch env 0 listdepkind
     in
@@ -508,8 +518,8 @@ let build_case_analysis_scheme_default env sigma pity kind =
 let change_sort_arity sort =
   let rec drec a = match kind a with
     | Cast (c,_,_) -> drec c
-    | Prod (n,t,c) -> let s, c' = drec c in s, mkProd (n, t, c')
-    | LetIn (n,b,t,c) -> let s, c' = drec c in s, mkLetIn (n,b,t,c')
+    | Prod (n,r,t,c) -> let s, c' = drec c in s, mkProd (n, r, t, c')
+    | LetIn (n,r,b,t,c) -> let s, c' = drec c in s, mkLetIn (n,r,b,t,c')
     | Sort s -> s, mkSort sort
     | _ -> assert false
   in
@@ -521,17 +531,17 @@ let weaken_sort_scheme env evd set sort npars term ty =
   let evdref = ref evd in
   let rec drec np elim =
     match kind elim with
-      | Prod (n,t,c) ->
+      | Prod (n,r,t,c) ->
 	  if Int.equal np 0 then
             let osort, t' = change_sort_arity sort t in
 	      evdref := (if set then Evd.set_eq_sort else Evd.set_leq_sort) env !evdref sort osort;
-              mkProd (n, t', c),
-              mkLambda (n, t', mkApp(term,Termops.rel_vect 0 (npars+1)))
+              mkProd (n, r, t', c),
+              mkLambda (n, r, t', mkApp(term,Termops.rel_vect 0 (npars+1)))
 	  else
             let c',term' = drec (np-1) c in
-	    mkProd (n, t, c'), mkLambda (n, t, term')
-      | LetIn (n,b,t,c) -> let c',term' = drec np c in
-           mkLetIn (n,b,t,c'), mkLetIn (n,b,t,term')
+            mkProd (n, r, t, c'), mkLambda (n, r, t, term')
+      | LetIn (n,r,b,t,c) -> let c',term' = drec np c in
+           mkLetIn (n,r,b,t,c'), mkLetIn (n,r,b,t,term')
       | _ -> anomaly ~label:"weaken_sort_scheme" (Pp.str "wrong elimination type.")
   in
   let ty, term = drec npars ty in

@@ -1601,8 +1601,8 @@ let _ =
 let rec head_of_constr sigma t =
   let t = strip_outer_cast sigma (collapse_appl sigma t) in
     match EConstr.kind sigma t with
-    | Prod (_,_,c2)  -> head_of_constr sigma c2
-    | LetIn (_,_,_,c2) -> head_of_constr sigma c2
+    | Prod (_,_,_,c2)  -> head_of_constr sigma c2
+    | LetIn (_,_,_,_,c2) -> head_of_constr sigma c2
     | App (f,args)  -> head_of_constr sigma f
     | _      -> t
 

@@ -117,14 +117,14 @@ let max_prefix_sign lid sign =
 *)
 let rec add_prods_sign env sigma t =
   match EConstr.kind sigma (whd_all env sigma t) with
-    | Prod (na,c1,b) ->
+    | Prod (na,r,c1,b) ->
 	let id = id_of_name_using_hdchar env sigma t na in
 	let b'= subst1 (mkVar id) b in
-        add_prods_sign (push_named (LocalAssum (id,c1)) env) sigma b'
-    | LetIn (na,c1,t1,b) ->
+        add_prods_sign (push_named (LocalAssum (id,r,c1)) env) sigma b'
+    | LetIn (na,r,c1,t1,b) ->
 	let id = id_of_name_using_hdchar env sigma t na in
 	let b'= subst1 (mkVar id) b in
-        add_prods_sign (push_named (LocalDef (id,c1,t1)) env) sigma b'
+        add_prods_sign (push_named (LocalDef (id,r,c1,t1)) env) sigma b'
     | _ -> (env,t)
 
 (* [dep_option] indicates whether the inversion lemma is dependent or not.
@@ -147,9 +147,10 @@ let compute_first_inversion_scheme env sigma ind sort dep_option =
   let pty,goal =
     if dep_option  then
       let pty = make_arity env sigma true indf sort in
+      let r = relevance_of_inductive_type env ind in
       let goal =
 	mkProd
-	  (Anonymous, mkAppliedInd ind, applist(mkVar p,realargs@[mkRel 1]))
+          (Anonymous, r, mkAppliedInd ind, applist(mkVar p,realargs@[mkRel 1]))
       in
       pty,goal
     else
@@ -167,11 +168,11 @@ let compute_first_inversion_scheme env sigma ind sort dep_option =
           env ~init:([],[])
       in
       let pty = it_mkNamedProd_or_LetIn (mkSort sort) ownsign in
-      let goal = mkArrow i (applist(mkVar p, List.rev revargs)) in
+      let goal = mkArrow i Sorts.Relevant (applist(mkVar p, List.rev revargs)) in
       (pty,goal)
   in
   let npty = nf_all env sigma pty in
-  let extenv = push_named (LocalAssum (p,npty)) env in
+  let extenv = push_named (LocalAssum (p,Sorts.Relevant,npty)) env in
   extenv, goal
 
 (* [inversion_scheme sign I]
@@ -223,7 +224,7 @@ let inversion_scheme env sigma t sort dep_option inv_op =
 	let h = next_ident_away (Id.of_string "H") !avoid in
 	let ty,inst = Evarutil.generalize_evar_over_rels sigma (e,args) in
 	avoid := Id.Set.add h !avoid;
-	ownSign := Context.Named.add (LocalAssum (h,ty)) !ownSign;
+        ownSign := Context.Named.add (LocalAssum (h,Sorts.Relevant,ty)) !ownSign;
 	applist (mkVar h, inst)
     | _ -> EConstr.map sigma fill_holes c
   in

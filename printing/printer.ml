@@ -116,7 +116,7 @@ let pr_constr_under_binders_env_gen pr env sigma (ids,c) =
   (* Warning: clashes can occur with variables of same name in env but *)
   (* we also need to preserve the actual names of the patterns *)
   (* So what to do? *)
-  let assums = List.map (fun id -> (Name id,(* dummy *) mkProp)) ids in
+  let assums = List.map (fun id -> (Name id,Sorts.Relevant,(* dummy *) mkProp)) ids in
   pr (Termops.push_rels_assum assums env) sigma c
 
 let pr_constr_under_binders_env = pr_constr_under_binders_env_gen pr_econstr_env
@@ -334,7 +334,7 @@ let pr_compacted_decl env sigma decl =
        let pb = if isCast c then surround pb else pb in
        ids, (str" := " ++ pb ++ cut ()), typ
   in
-  let pids = prlist_with_sep pr_comma pr_id ids in
+  let pids = prlist_with_sep pr_comma (fun (id,_) -> pr_id id) ids in
   let pt = pr_ltype_env env sigma typ in
   let ptyp = (str" : " ++ pt) in
   hov 0 (pids ++ pbody ++ ptyp)
@@ -347,7 +347,7 @@ let pr_rel_decl env sigma decl =
   let typ = RelDecl.get_type decl in
   let pbody = match decl with
     | RelDecl.LocalAssum _ -> mt ()
-    | RelDecl.LocalDef (_,c,_) ->
+    | RelDecl.LocalDef (_,_,c,_) ->
 	(* Force evaluation *)
 	let pb = pr_lconstr_env env sigma c in
 	let pb = if isCast c then surround pb else pb in

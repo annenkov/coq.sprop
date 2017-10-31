@@ -1959,7 +1959,7 @@ let internalize globalenv env pattern_mode (_, ntnvars as lvar) c =
 		canonize_args t l forbidden_names match_acc ((Loc.tag Anonymous)::var_acc)
 	      | [],[] ->
 		(add_name match_acc na, var_acc)
-	      | (LocalAssum (cano_name,ty) | LocalDef (cano_name,_,ty)) :: t, c::tt ->
+              | (LocalAssum (cano_name,_,ty) | LocalDef (cano_name,_,_,ty)) :: t, c::tt ->
                 begin match DAst.get c with
                 | PatVar x ->
                   let loc = c.CAst.loc in
@@ -2210,25 +2210,27 @@ let interp_glob_context_evars env sigma k bl =
   let env, sigma, par, _, impls =
     List.fold_left
       (fun (env,sigma,params,n,impls) (na, k, b, t) ->
-       let t' =
-	 if Option.is_empty b then locate_if_hole ?loc:(loc_of_glob_constr t) na t
-	 else t
-       in
-       let sigma, t = understand_tcc env sigma ~expected_type:IsType t' in
-	match b with
-	    None ->
-	      let d = LocalAssum (na,t) in
-	      let impls =
-		if k == Implicit then
-		  let na = match na with Name n -> Some n | Anonymous -> None in
-		    (ExplByPos (n, na), (true, true, true)) :: impls
-		else impls
-	      in
-                (push_rel d env, sigma, d::params, succ n, impls)
-	  | Some b ->
-              let sigma, c = understand_tcc env sigma ~expected_type:(OfType t) b in
-	      let d = LocalDef (na, c, t) in
-                (push_rel d env, sigma, d::params, n, impls))
+         let t' =
+           if Option.is_empty b then locate_if_hole ?loc:(loc_of_glob_constr t) na t
+           else t
+         in
+         let sigma, t = understand_tcc env sigma ~expected_type:IsType t' in
+         match b with
+           None ->
+           let r = Retyping.relevance_of_type env sigma t in
+           let d = LocalAssum (na,r,t) in
+           let impls =
+             if k == Implicit then
+               let na = match na with Name n -> Some n | Anonymous -> None in
+               (ExplByPos (n, na), (true, true, true)) :: impls
+             else impls
+           in
+           (push_rel d env, sigma, d::params, succ n, impls)
+         | Some b ->
+           let sigma, c = understand_tcc env sigma ~expected_type:(OfType t) b in
+           let r = Retyping.relevance_of_type env sigma t in
+           let d = LocalDef (na, r, c, t) in
+           (push_rel d env, sigma, d::params, n, impls))
       (env,sigma,[],k+1,[]) (List.rev bl)
   in sigma, ((env, par), impls)
 

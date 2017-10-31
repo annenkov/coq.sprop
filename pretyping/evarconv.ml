@@ -62,8 +62,8 @@ let coq_unit_judge =
       make_judge id type_of_id, ctx
     | None ->
       (* In case the constants id/ID are not defined *)
-      Environ.make_judge (mkLambda (na1,mkProp,mkLambda(na2,mkRel 1,mkRel 1)))
-        (mkProd (na1,mkProp,mkArrow (mkRel 1) (mkRel 2))), 
+      Environ.make_judge (mkLambda (na1,Sorts.Relevant,mkProp,mkLambda(na2,Sorts.Relevant,mkRel 1,mkRel 1)))
+        (mkProd (na1,Sorts.Relevant,mkProp,mkArrow (mkRel 1) Sorts.Relevant (mkRel 2))),
       Univ.ContextSet.empty
 
 let unfold_projection env evd ts p c =
@@ -81,7 +81,7 @@ let eval_flexible_term ts env evd c =
   | Rel n ->
       (try match lookup_rel n env with
            | RelDecl.LocalAssum _ -> None
-           | RelDecl.LocalDef (_,v,_) -> Some (lift n v)
+           | RelDecl.LocalDef (_,_,v,_) -> Some (lift n v)
        with Not_found -> None)
   | Var id ->
       (try
@@ -89,7 +89,7 @@ let eval_flexible_term ts env evd c =
 	   env |> lookup_named id |> NamedDecl.get_value
 	 else None
        with Not_found -> None)
-  | LetIn (_,b,_,c) -> Some (subst1 b c)
+  | LetIn (_,_,b,_,c) -> Some (subst1 b c)
   | Lambda _ -> Some c
   | Proj (p, c) -> 
     if Projection.unfolded p then assert false
@@ -136,7 +136,7 @@ let occur_rigidly (evk,_ as ev) evd t =
     | Cast (p, _, _) -> aux p
     | Lambda _ | LetIn _ -> false
     | Const _ -> false
-    | Prod (_, b, t) -> ignore(aux b || aux t); true
+    | Prod (_, _, b, t) -> ignore(aux b || aux t); true
     | Rel _ | Var _ -> false
     | Case (_,_,c,_) -> if eq_constr evd (mkEvar ev) c then raise Occur else false
   in try ignore(aux t); false with Occur -> true
@@ -166,8 +166,8 @@ let check_conv_record env sigma (t1,sk1) (t2,sk2) =
   let canon_s,sk2_effective =
     try
       match EConstr.kind sigma t2 with
-	Prod (_,a,b) -> (* assert (l2=[]); *)
-	  let _, a, b = destProd sigma t2 in
+        Prod (_,_,a,b) -> (* assert (l2=[]); *)
+          let _, _, a, b = destProd sigma t2 in
           if noccurn sigma 1 b then
             lookup_canonical_conversion (proji, Prod_cs),
 	    (Stack.append_app [|a;pop b|] Stack.empty)
@@ -297,8 +297,8 @@ let ise_stack2 no_app env evd f sk1 sk2 =
        if Constant.equal (Projection.constant p1) (Projection.constant p2)
        then ise_stack2 true i q1 q2
        else fail (UnifFailure (i, NotSameHead))
-    | Stack.Fix (((li1, i1),(_,tys1,bds1 as recdef1)),a1,_)::q1,
-      Stack.Fix (((li2, i2),(_,tys2,bds2)),a2,_)::q2 ->
+    | Stack.Fix (((li1, i1),(_,_,tys1,bds1 as recdef1)),a1,_)::q1,
+      Stack.Fix (((li2, i2),(_,_,tys2,bds2)),a2,_)::q2 ->
       if Int.equal i1 i2 && Array.equal Int.equal li1 li2 then
         match ise_and i [
 	  (fun i -> ise_array2 i (fun ii -> f env ii CONV) tys1 tys2);
@@ -326,8 +326,8 @@ let exact_ise_stack2 env evd f sk1 sk2 =
       (fun i -> ise_stack2 i q1 q2);
       (fun i -> ise_array2 i (fun ii -> f env ii CONV) c1 c2);
       (fun i -> f env i CONV t1 t2)]
-    | Stack.Fix (((li1, i1),(_,tys1,bds1 as recdef1)),a1,_)::q1,
-      Stack.Fix (((li2, i2),(_,tys2,bds2)),a2,_)::q2 ->
+    | Stack.Fix (((li1, i1),(_,_,tys1,bds1 as recdef1)),a1,_)::q1,
+      Stack.Fix (((li2, i2),(_,_,tys2,bds2)),a2,_)::q2 ->
       if Int.equal i1 i2 && Array.equal Int.equal li1 li2 then
 	ise_and i [
 	  (fun i -> ise_stack2 i q1 q2);
@@ -432,9 +432,9 @@ and evar_eqappr_x ?(rhs_is_already_stuck = false) ts env evd pbty
       |Some _, _ -> UnifFailure (evd,NotSameArgSize) in
   let eta env evd onleft sk term sk' term' =
     assert (match sk with [] -> true | _ -> false);
-    let (na,c1,c'1) = destLambda evd term in
+    let (na,r,c1,c'1) = destLambda evd term in
     let c = nf_evar evd c1 in
-    let env' = push_rel (RelDecl.LocalAssum (na,c)) env in
+    let env' = push_rel (RelDecl.LocalAssum (na,r,c)) env in
     let out1 = whd_betaiota_deltazeta_for_iota_state
       (fst ts) env' evd Cst_stack.empty (c'1, Stack.empty) in
     let out2 = whd_nored_state evd
@@ -718,7 +718,7 @@ and evar_eqappr_x ?(rhs_is_already_stuck = false) ts env evd pbty
 
     | MaybeFlexible v1, MaybeFlexible v2 -> begin
         match EConstr.kind evd term1, EConstr.kind evd term2 with
-        | LetIn (na1,b1,t1,c'1), LetIn (na2,b2,t2,c'2) ->
+        | LetIn (na1,r1,b1,t1,c'1), LetIn (na2,r2,b2,t2,c'2) ->
         let f1 i = (* FO *)
           ise_and i
             [(fun i -> ise_try i
@@ -729,7 +729,7 @@ and evar_eqappr_x ?(rhs_is_already_stuck = false) ts env evd pbty
 	       let b = nf_evar i b1 in
 	       let t = nf_evar i t1 in
                let na = Nameops.Name.pick na1 na2 in
-	       evar_conv_x ts (push_rel (RelDecl.LocalDef (na,b,t)) env) i pbty c'1 c'2);
+               evar_conv_x ts (push_rel (RelDecl.LocalDef (na,r1,b,t)) env) i pbty c'1 c'2);
 	     (fun i -> exact_ise_stack2 env i (evar_conv_x ts) sk1 sk2)]
 	and f2 i =
           let out1 = whd_betaiota_deltazeta_for_iota_state (fst ts) env i csts1 (v1,sk1)
@@ -809,7 +809,7 @@ and evar_eqappr_x ?(rhs_is_already_stuck = false) ts env evd pbty
             | Evar _ -> Stack.not_purely_applicative args
 	    (* false (* immediate solution without Canon Struct *)*)
             | Lambda _ -> assert (match args with [] -> true | _ -> false); true
-            | LetIn (_,b,_,c) -> is_unnamed
+            | LetIn (_,_,b,_,c) -> is_unnamed
 	     (fst (whd_betaiota_deltazeta_for_iota_state
 		      (fst ts) env i Cst_stack.empty (subst1 b c, args)))
 	    | Fix _ -> true (* Partially applied fix can be the result of a whd call *)
@@ -838,15 +838,15 @@ and evar_eqappr_x ?(rhs_is_already_stuck = false) ts env evd pbty
     end
 
     | Rigid, Rigid when EConstr.isLambda evd term1 && EConstr.isLambda evd term2 ->
-        let (na1,c1,c'1) = EConstr.destLambda evd term1 in
-        let (na2,c2,c'2) = EConstr.destLambda evd term2 in
+        let (na1,r1,c1,c'1) = EConstr.destLambda evd term1 in
+        let (na2,_,c2,c'2) = EConstr.destLambda evd term2 in
         assert app_empty;
         ise_and evd
           [(fun i -> evar_conv_x ts env i CONV c1 c2);
            (fun i ->
 	     let c = nf_evar i c1 in
              let na = Nameops.Name.pick na1 na2 in
-	     evar_conv_x ts (push_rel (RelDecl.LocalAssum (na,c)) env) i CONV c'1 c'2)]
+             evar_conv_x ts (push_rel (RelDecl.LocalAssum (na,r1,c)) env) i CONV c'1 c'2)]
 
     | Flexible ev1, Rigid -> flex_rigid true ev1 appr1 appr2
     | Rigid, Flexible ev2 -> flex_rigid false ev2 appr2 appr1
@@ -901,13 +901,13 @@ and evar_eqappr_x ?(rhs_is_already_stuck = false) ts env evd pbty
                UnifFailure (evd,UnifUnivInconsistency p)
 	     | e when CErrors.noncritical e -> UnifFailure (evd,NotSameHead))
 
-	| Prod (n1,c1,c'1), Prod (n2,c2,c'2) when app_empty ->
+        | Prod (n1,r1,c1,c'1), Prod (n2,_,c2,c'2) when app_empty ->
             ise_and evd
               [(fun i -> evar_conv_x ts env i CONV c1 c2);
                (fun i ->
  	         let c = nf_evar i c1 in
                  let na = Nameops.Name.pick n1 n2 in
-	         evar_conv_x ts (push_rel (RelDecl.LocalAssum (na,c)) env) i pbty c'1 c'2)]
+                 evar_conv_x ts (push_rel (RelDecl.LocalAssum (na,r1,c)) env) i pbty c'1 c'2)]
 
 	| Rel x1, Rel x2 ->
 	    if Int.equal x1 x2 then
@@ -930,7 +930,7 @@ and evar_eqappr_x ?(rhs_is_already_stuck = false) ts env evd pbty
 	| _, Construct u ->
 	  eta_constructor ts env evd sk2 u sk1 term1
 
-	| Fix ((li1, i1),(_,tys1,bds1 as recdef1)), Fix ((li2, i2),(_,tys2,bds2)) -> (* Partially applied fixs *)
+        | Fix ((li1, i1),(_,_,tys1,bds1 as recdef1)), Fix ((li2, i2),(_,_,tys2,bds2)) -> (* Partially applied fixs *)
 	  if Int.equal i1 i2 && Array.equal Int.equal li1 li2 then
             ise_and evd [
 	      (fun i -> ise_array2 i (fun i' -> evar_conv_x ts env i' CONV) tys1 tys2);
@@ -938,7 +938,7 @@ and evar_eqappr_x ?(rhs_is_already_stuck = false) ts env evd pbty
 	      (fun i -> exact_ise_stack2 env i (evar_conv_x ts) sk1 sk2)]
 	  else UnifFailure (evd, NotSameHead)
 
-	| CoFix (i1,(_,tys1,bds1 as recdef1)), CoFix (i2,(_,tys2,bds2)) ->
+        | CoFix (i1,(_,_,tys1,bds1 as recdef1)), CoFix (i2,(_,_,tys2,bds2)) ->
             if Int.equal i1 i2  then
               ise_and evd
                 [(fun i -> ise_array2 i
@@ -1120,7 +1120,7 @@ let filter_possible_projections evd c ty ctxt args =
     let a = Array.unsafe_get args i in
     (match decl with
      | NamedDecl.LocalAssum _ -> false
-     | NamedDecl.LocalDef (_,c,_) -> not (isRel evd (EConstr.of_constr c) || isVar evd (EConstr.of_constr c))) ||
+     | NamedDecl.LocalDef (_,_,c,_) -> not (isRel evd (EConstr.of_constr c) || isVar evd (EConstr.of_constr c))) ||
     a == c ||
     (* Here we make an approximation, for instance, we could also be *)
     (* interested in finding a term u convertible to c such that a occurs *)

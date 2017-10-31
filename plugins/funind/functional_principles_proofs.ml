@@ -305,7 +305,7 @@ let change_eq env sigma hyp_id (context:rel_context) x t end_of_type  =
     in
     let old_context_length = List.length context + 1 in
     let witness_fun =
-      mkLetIn(Anonymous,make_refl_eq constructor t1_typ (fst t1),t,
+      mkLetIn(Anonymous,Sorts.Relevant,make_refl_eq constructor t1_typ (fst t1),t,
 	       mkApp(mkVar hyp_id,Array.init old_context_length (fun i -> mkRel (old_context_length - i)))
 	      )
     in
@@ -315,7 +315,8 @@ let change_eq env sigma hyp_id (context:rel_context) x t end_of_type  =
 	   try
 	     let witness = Int.Map.find i sub in
 	     if is_local_def decl then anomaly (Pp.str "can not redefine a rel!");
-	     (pop end_of_type,ctxt_size,mkLetIn (RelDecl.get_name decl, witness, RelDecl.get_type decl, witness_fun))
+      (pop end_of_type,ctxt_size,mkLetIn (RelDecl.get_name decl, RelDecl.get_relevance decl,
+                                            witness, RelDecl.get_type decl, witness_fun))
 	   with Not_found  ->
 	     (mkProd_or_LetIn decl end_of_type, ctxt_size + 1, mkLambda_or_LetIn decl witness_fun)
 	)
@@ -431,7 +432,7 @@ let clean_hyp_with_heq ptes_infos eq_hyps hyp_id env sigma =
     else if isProd sigma type_of_hyp
     then
       begin
-	let (x,t_x,t') = destProd sigma type_of_hyp in
+        let (x,rx,t_x,t') = destProd sigma type_of_hyp in
 	let actual_real_type_of_hyp = it_mkProd_or_LetIn t' context in
 	if is_property sigma ptes_infos t_x actual_real_type_of_hyp then
 	  begin
@@ -544,7 +545,7 @@ let clean_hyp_with_heq ptes_infos eq_hyps hyp_id env sigma =
 		(scan_type new_context new_t')
 	    with NoChange ->
 	      (* Last thing todo : push the rel in the context and continue *)
-	      scan_type (LocalAssum (x,t_x) :: context) t'
+              scan_type (LocalAssum (x,rx,t_x) :: context) t'
 	  end
       end
     else
@@ -613,7 +614,7 @@ let treat_new_case ptes_infos nb_prod continue_tac term dyn_infos =
 		   anomaly (Pp.str "cannot compute new term value.")
 	   in
 	 let fun_body =
-	   mkLambda(Anonymous,
+           mkLambda(Anonymous,Sorts.Relevant,
 		    pf_unsafe_type_of g' term,
 		    Termops.replace_term (project g') term (mkRel 1) dyn_infos.info
 		   )
@@ -739,7 +740,7 @@ let build_proof
 		    g
 	      in
 	      build_proof do_finalize_t {dyn_infos with info = t} g
-	  | Lambda(n,t,b) ->
+          | Lambda(n,r,t,b) ->
 	      begin
 		match EConstr.kind sigma (pf_concl g) with
 		  | Prod _ ->
@@ -967,7 +968,7 @@ let generate_equation_lemma evd fnames f fun_num nb_params nb_args rec_args_num 
   let (f_body, _) = Option.get (Global.body_of_constant_body f_def) in
   let f_body = EConstr.of_constr f_body in
   let params,f_body_with_params = decompose_lam_n evd nb_params f_body in
-  let (_,num),(_,_,bodies) = destFix evd f_body_with_params in
+  let (_,num),(_,_,_,bodies) = destFix evd f_body_with_params in
   let fnames_with_params =
     let params = Array.init nb_params (fun i -> mkRel(nb_params - i)) in
     let fnames = List.rev (Array.to_list (Array.map (fun f -> mkApp(f,params)) fnames)) in
@@ -1150,7 +1151,7 @@ let prove_princ_for_struct (evd:Evd.evar_map ref) interactive_proof fun_num fnam
     let fix_offset = List.length princ_params in
     let ptes_to_fix,infos =
       match EConstr.kind (project g) fbody_with_full_params with
-	| Fix((idxs,i),(names,typess,bodies)) ->
+        | Fix((idxs,i),(names,rs,typess,bodies)) ->
 	    let bodies_with_all_params =
 	      Array.map
 		(fun body ->
@@ -1196,9 +1197,9 @@ let prove_princ_for_struct (evd:Evd.evar_map ref) interactive_proof fun_num fnam
 			 applist(body,List.rev_map var_of_decl full_params))
 		     in
 		     match EConstr.kind (project g) body_with_full_params with
-		       | Fix((_,num),(_,_,bs)) ->
+                       | Fix((_,num),(_,_,_,bs)) ->
                                Reductionops.nf_betaiota (pf_env g) (project g)
-				 (
+                                 (
 				   (applist
 				      (substl
 					 (List.rev
@@ -1515,7 +1516,7 @@ let is_valid_hypothesis sigma predicates_name =
   let rec is_valid_hypothesis typ =
     is_pte typ ||
       match EConstr.kind sigma typ with
-	| Prod(_,pte,typ') -> is_pte pte && is_valid_hypothesis typ'
+        | Prod(_,r,pte,typ') -> is_pte pte && is_valid_hypothesis typ'
 	| _ -> false
   in
   is_valid_hypothesis
@@ -1566,7 +1567,7 @@ let prove_principle_for_gen
   in
   let rec_arg_id =
     match List.rev post_rec_arg with
-      | (LocalAssum (Name id,_) | LocalDef (Name id,_,_)) :: _ -> id
+      | (LocalAssum (Name id,_,_) | LocalDef (Name id,_,_,_)) :: _ -> id
       | _ -> assert false
   in
 (*   observe (str "rec_arg_id := " ++ pr_lconstr (mkVar rec_arg_id)); *)

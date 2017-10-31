@@ -677,7 +677,7 @@ let find_scope_class_opt = function
 
 let rec compute_arguments_classes t =
   match Constr.kind (EConstr.Unsafe.to_constr (Reductionops.whd_betaiotazeta Evd.empty (EConstr.of_constr t))) with
-    | Prod (_,t,u) ->
+    | Prod (_,_,t,u) ->
 	let cl = try Some (compute_scope_class t) with Not_found -> None in
 	cl :: compute_arguments_classes u
     | _ -> []

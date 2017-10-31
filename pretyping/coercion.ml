@@ -63,7 +63,7 @@ let apply_coercion_args env evd check isproj argl funj =
 	  uj_type = typ }
     | h::restl -> (* On devrait pouvoir s'arranger pour qu'on n'ait pas a faire hnf_constr *)
       match EConstr.kind !evdref (whd_all env !evdref typ) with
-      | Prod (_,c1,c2) ->
+      | Prod (_,_,c1,c2) ->
         if check && not (e_cumul env evdref (Retyping.get_type_of env !evdref h) c1) then
 	  raise NoCoercion;
         apply_rec (h::acc) (subst1 h c2) restl
@@ -154,7 +154,7 @@ and coerce ?loc env evdref (x : EConstr.constr) (y : EConstr.constr)
     let subco () = subset_coerce env evdref x y in
     let dest_prod c =
       match Reductionops.splay_prod_n env (!evdref) 1 c with
-      | [LocalAssum (na,t) | LocalDef (na,_,t)], c -> (na, t), c
+      | [LocalAssum (na,r,t) | LocalDef (na,r,_,t)], c -> (na, r, t), c
       | _ -> raise NoSubtacCoercion
     in
     let coerce_application typ typ' c c' l l' =
@@ -163,12 +163,12 @@ and coerce ?loc env evdref (x : EConstr.constr) (y : EConstr.constr)
 	if i < len then
 	  let hdx = l.(i) and hdy = l'.(i) in
 	    try evdref := the_conv_x_leq env hdx hdy !evdref;
-	      let (n, eqT), restT = dest_prod typ in
-	      let (n', eqT'), restT' = dest_prod typ' in
+              let (n, rT, eqT), restT = dest_prod typ in
+              let (n', rT', eqT'), restT' = dest_prod typ' in
 		aux (hdx :: tele) (subst1 hdx restT) (subst1 hdy restT') (succ i) co
 	    with UnableToUnify _ ->
-	      let (n, eqT), restT = dest_prod typ in
-	      let (n', eqT'), restT' = dest_prod typ' in
+              let (n, rT, eqT), restT = dest_prod typ in
+              let (n', rT', eqT'), restT' = dest_prod typ' in
 	      let _ =
 		try evdref := the_conv_x_leq env eqT eqT' !evdref
 		with UnableToUnify _ -> raise NoSubtacCoercion
@@ -179,7 +179,7 @@ and coerce ?loc env evdref (x : EConstr.constr) (y : EConstr.constr)
 		  (List.rev (Array.to_list (Array.sub l (succ i) (len - (succ i)))))
 		in
 		let args = List.rev (restargs @ mkRel 1 :: List.map (lift 1) tele) in
-		let pred = mkLambda (n, eqT, applist (lift 1 c, args)) in
+                let pred = mkLambda (n, rT, eqT, applist (lift 1 c, args)) in
 		let eq = papp evdref coq_eq_ind [| eqT; hdx; hdy |] in
 		let evar = make_existential ?loc n env evdref eq in
 		let eq_app x = papp evdref coq_eq_rect
@@ -203,11 +203,11 @@ and coerce ?loc env evdref (x : EConstr.constr) (y : EConstr.constr)
         | (Prop | Set), Type _ -> None
 	| Type x, Type y when Univ.Universe.equal x y -> None (* false *)
 	| _ -> subco ())
-      | Prod (name, a, b), Prod (name', a', b') ->
+      | Prod (name, r, a, b), Prod (name', r', a', b') ->
 	  let name' = 
 	    Name (Namegen.next_ident_away Namegen.default_dependent_ident (Termops.vars_of_env env))
 	  in
-	  let env' = push_rel (LocalAssum (name', a')) env in
+          let env' = push_rel (LocalAssum (name', r', a')) env in
 	  let c1 = coerce_unify env' (lift 1 a') (lift 1 a) in
 	    (* env, x : a' |- c1 : lift 1 a' > lift 1 a *)
 	  let coec1 = app_opt env' evdref c1 (mkRel 1) in
@@ -219,7 +219,7 @@ and coerce ?loc env evdref (x : EConstr.constr) (y : EConstr.constr)
 	     | _, _ ->
 		 Some
 		   (fun f ->
-		      mkLambda (name', a',
+                      mkLambda (name', r', a',
 				app_opt env' evdref c2
 				  (mkApp (lift 1 f, [| coec1 |])))))
 
@@ -242,11 +242,11 @@ and coerce ?loc env evdref (x : EConstr.constr) (y : EConstr.constr)
 		     let c1 = coerce_unify env a a' in
 		     let remove_head a c =
 		       match EConstr.kind !evdref c with
-		       | Lambda (n, t, t') -> c, t'
+                       | Lambda (n, _, t, t') -> c, t'
 		       | Evar (k, args) ->
 			   let (evs, t) = Evardefine.define_evar_as_lambda env !evdref (k,args) in
 			     evdref := evs;
-			     let (n, dom, rng) = destLambda !evdref t in
+                             let (n, _, dom, rng) = destLambda !evdref t in
 			       if isEvar !evdref dom then
 				 let (domk, args) = destEvar !evdref dom in
 				   evdref := define domk (EConstr.Unsafe.to_constr a) !evdref;
@@ -254,8 +254,10 @@ and coerce ?loc env evdref (x : EConstr.constr) (y : EConstr.constr)
 			       t, rng
 		       | _ -> raise NoSubtacCoercion
 		     in
-		     let (pb, b), (pb', b') = remove_head a pb, remove_head a' pb' in
-		     let env' = push_rel (LocalAssum (Name Namegen.default_dependent_ident, a)) env in
+                     let (pb, b), (pb', b') = remove_head a pb, remove_head a' pb' in
+                     let ra = Retyping.relevance_of_type env !evdref a
+                     in
+                     let env' = push_rel (LocalAssum (Name Namegen.default_dependent_ident, ra, a)) env in
 		     let c2 = coerce_unify env' b b' in
 		       match c1, c2 with
 		       | None, None -> None
@@ -374,7 +376,7 @@ let apply_coercion env sigma p hj typ_cl =
 let inh_app_fun_core env evd j =
   let t = whd_all env evd j.uj_type in
     match EConstr.kind evd t with
-    | Prod (_,_,_) -> (evd,j)
+    | Prod _ -> (evd,j)
     | Evar ev ->
 	let (evd',t) = Evardefine.define_evar_as_product evd ev in
 	  (evd',{ uj_val = j.uj_val; uj_type = t })
@@ -473,7 +475,7 @@ let rec inh_conv_coerce_to_fail ?loc env evd rigidonly v t c1 =
       EConstr.kind evd (whd_all env evd t),
       EConstr.kind evd (whd_all env evd c1)
       with
-      | Prod (name,t1,t2), Prod (_,u1,u2) ->
+      | Prod (name,r1,t1,t2), Prod (_,_,u1,u2) ->
           (* Conversion did not work, we may succeed with a coercion. *)
           (* We eta-expand (hence possibly modifying the original term!) *)
 	  (* and look for a coercion c:u1->t1 s.t. fun x:u1 => v' (c x)) *)
@@ -484,7 +486,7 @@ let rec inh_conv_coerce_to_fail ?loc env evd rigidonly v t c1 =
 	    | Anonymous -> Name Namegen.default_dependent_ident
 	    | _ -> name in
 	  let open Context.Rel.Declaration in
-	  let env1 = push_rel (LocalAssum (name,u1)) env in
+          let env1 = push_rel (LocalAssum (name,r1,u1)) env in
 	  let (evd', v1) =
 	    inh_conv_coerce_to_fail ?loc env1 evd rigidonly
               (Some (mkRel 1)) (lift 1 u1) (lift 1 t1) in
@@ -494,7 +496,7 @@ let rec inh_conv_coerce_to_fail ?loc env evd rigidonly v t c1 =
 	    | None -> subst_term evd' v1 t2
 	    | Some v2 -> Retyping.get_type_of env1 evd' v2 in
 	  let (evd'',v2') = inh_conv_coerce_to_fail ?loc env1 evd' rigidonly v2 t2 u2 in
-	    (evd'', Option.map (fun v2' -> mkLambda (name, u1, v2')) v2')
+            (evd'', Option.map (fun v2' -> mkLambda (name, r1, u1, v2')) v2')
       | _ -> raise (NoCoercionNoUnifier (best_failed_evd,e))
 
 (* Look for cj' obtained from cj by inserting coercions, s.t. cj'.typ = t *)

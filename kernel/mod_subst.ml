@@ -376,22 +376,22 @@ let rec map_kn f f' c =
 	  let t'= func t in
 	    if (t'==t && ct'==ct) then c
 	    else mkCast (ct', k, t')
-      | Prod (na,t,ct) ->
+      | Prod (na,r,t,ct) ->
 	  let ct' = func ct in
 	  let t'= func t in
 	    if (t'==t && ct'==ct) then c
-	    else mkProd (na, t', ct')
-      | Lambda (na,t,ct) ->
+            else mkProd (na, r, t', ct')
+      | Lambda (na,r,t,ct) ->
 	  let ct' = func ct in
 	  let t'= func t in
 	    if (t'==t && ct'==ct) then c
-	    else mkLambda (na, t', ct')
-      | LetIn (na,b,t,ct) ->
+            else mkLambda (na, r, t', ct')
+      | LetIn (na,r,b,t,ct) ->
 	  let ct' = func ct in
 	  let t'= func t in
 	  let b'= func b in
 	    if (t'==t && ct'==ct && b==b') then c
-	    else mkLetIn (na, b', t', ct')
+            else mkLetIn (na, r, b', t', ct')
       | App (ct,l) ->
 	  let ct' = func ct in
 	  let l' = Array.smartmap func l in
@@ -401,16 +401,16 @@ let rec map_kn f f' c =
 	  let l' = Array.smartmap func l in
 	    if (l'==l) then c
 	    else mkEvar (e,l')
-      | Fix (ln,(lna,tl,bl)) ->
+      | Fix (ln,(lna,r,tl,bl)) ->
 	  let tl' = Array.smartmap func tl in
 	  let bl' = Array.smartmap func bl in
 	    if (bl == bl'&& tl == tl') then c
-	    else mkFix (ln,(lna,tl',bl'))
-      | CoFix(ln,(lna,tl,bl)) ->
+            else mkFix (ln,(lna,r,tl',bl'))
+      | CoFix(ln,(lna,r,tl,bl)) ->
 	  let tl' = Array.smartmap func tl in
 	  let bl' = Array.smartmap func bl in
 	    if (bl == bl'&& tl == tl') then c
-	    else mkCoFix (ln,(lna,tl',bl'))
+            else mkCoFix (ln,(lna,r,tl',bl'))
       | _ -> c
 
 let subst_mps sub c =

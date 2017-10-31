@@ -46,8 +46,8 @@ let test_conversion env sigma pb c1 c2 =
 let pf_concl gls = Goal.V82.concl (project gls) (sig_it gls)
 let pf_hyps_types gls  =
   let sign = Environ.named_context (pf_env gls) in
-  List.map (function LocalAssum (id,x)
-                   | LocalDef (id,_,x) -> id, EConstr.of_constr x)
+  List.map (function LocalAssum (id,_,x)
+                   | LocalDef (id,_,_,x) -> id, EConstr.of_constr x)
            sign
 
 let pf_nth_hyp_id gls n = List.nth (pf_hyps gls) (n-1) |> NamedDecl.get_id
@@ -196,8 +196,8 @@ module New = struct
   let pf_hyps_types gl =
     let env = Proofview.Goal.env gl in
     let sign = Environ.named_context env in
-    List.map (function LocalAssum (id,x)
-                     | LocalDef (id,_,x) -> id, EConstr.of_constr x)
+    List.map (function LocalAssum (id,_,x)
+                     | LocalDef (id,_,_,x) -> id, EConstr.of_constr x)
              sign
 
   let pf_last_hyp gl =

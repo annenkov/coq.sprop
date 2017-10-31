@@ -329,7 +329,7 @@ let rec splay_search_pattern na = function
   | _ -> CErrors.user_err (Pp.str "no head constant in head search pattern")
 
 let push_rels_assum l e =
-  let l = List.map (fun (n,t) -> n, EConstr.Unsafe.to_constr t) l in
+  let l = List.map (fun (n,r,t) -> n, r, EConstr.Unsafe.to_constr t) l in
   push_rels_assum l e
 
 let coerce_search_pattern_to_sort hpat =
@@ -370,8 +370,8 @@ let interp_head_pat hpat =
   let filter_head, p = coerce_search_pattern_to_sort hpat in
   let rec loop c = match CoqConstr.kind c with
   | Cast (c', _, _) -> loop c'
-  | Prod (_, _, c') -> loop c'
-  | LetIn (_, _, _, c') -> loop c'
+  | Prod (_,_, _, c') -> loop c'
+  | LetIn (_,_, _, _, c') -> loop c'
   | _ -> Constr_matching.is_matching (Global.env()) Evd.empty p (EConstr.of_constr c) in
   filter_head, loop
 

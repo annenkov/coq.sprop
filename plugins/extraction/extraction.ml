@@ -83,7 +83,7 @@ let whd_betaiotazeta t =
 let rec flag_of_type env t : flag =
   let t = whd_all env t in
   match Constr.kind t with
-    | Prod (x,t,c) -> flag_of_type (push_rel (LocalAssum (x,t)) env) c
+    | Prod (x,r,t,c) -> flag_of_type (push_rel (LocalAssum (x,r,t)) env) c
     | Sort s when Sorts.is_prop s || Sorts.is_sprop s -> (Logic,TypeScheme)
     | Sort _ -> (Info,TypeScheme)
     | _ ->
@@ -108,22 +108,22 @@ let is_info_scheme env t = match flag_of_type env t with
 | (Info, TypeScheme) -> true
 | _ -> false
 
-let push_rel_assum (n, t) env =
-  Environ.push_rel (LocalAssum (n, t)) env
+let push_rel_assum (n, r, t) env =
+  Environ.push_rel (LocalAssum (n, r, t)) env
 
 (*s [type_sign] gernerates a signature aimed at treating a type application. *)
 
 let rec type_sign env c =
   match Constr.kind (whd_all env c) with
-    | Prod (n,t,d) ->
+    | Prod (n,r,t,d) ->
 	(if is_info_scheme env t then Keep else Kill Kprop)
-	:: (type_sign (push_rel_assum (n,t) env) d)
+        :: (type_sign (push_rel_assum (n,r,t) env) d)
     | _ -> []
 
 let rec type_scheme_nb_args env c =
   match Constr.kind (whd_all env c) with
-    | Prod (n,t,d) ->
-	let n = type_scheme_nb_args (push_rel_assum (n,t) env) d in
+    | Prod (n,r,t,d) ->
+        let n = type_scheme_nb_args (push_rel_assum (n,r,t) env) d in
 	if is_info_scheme env t then n+1 else n
     | _ -> 0
 
@@ -149,16 +149,16 @@ let make_typvar n vl =
 
 let rec type_sign_vl env c =
   match Constr.kind (whd_all env c) with
-    | Prod (n,t,d) ->
-	let s,vl = type_sign_vl (push_rel_assum (n,t) env) d in
+    | Prod (n,r,t,d) ->
+        let s,vl = type_sign_vl (push_rel_assum (n,r,t) env) d in
 	if not (is_info_scheme env t) then Kill Kprop::s, vl
 	else Keep::s, (make_typvar n vl) :: vl
     | _ -> [],[]
 
 let rec nb_default_params env c =
   match Constr.kind (whd_all env c) with
-    | Prod (n,t,d) ->
-	let n = nb_default_params (push_rel_assum (n,t) env) d in
+    | Prod (n,r,t,d) ->
+        let n = nb_default_params (push_rel_assum (n,r,t) env) d in
 	if is_default env t then n+1 else n
     | _ -> 0
 
@@ -231,13 +231,13 @@ let rec extract_type env db j c args =
     | App (d, args') ->
 	(* We just accumulate the arguments. *)
 	extract_type env db j d (Array.to_list args' @ args)
-    | Lambda (_,_,d) ->
+    | Lambda (_,_,_,d) ->
 	(match args with
 	   | [] -> assert false (* A lambda cannot be a type. *)
 	   | a :: args -> extract_type env db j (subst1 a d) args)
-    | Prod (n,t,d) ->
+    | Prod (n,r,t,d) ->
 	assert (List.is_empty args);
-	let env' = push_rel_assum (n,t) env in
+        let env' = push_rel_assum (n,r,t) env in
 	(match flag_of_type env t with
 	   | (Info, Default) ->
 	       (* Standard case: two [extract_type] ... *)
@@ -262,7 +262,7 @@ let rec extract_type env db j c args =
     | _ when sort_of env (applistc c args) == InProp -> Tdummy Kprop
     | Rel n ->
 	(match lookup_rel n env with
-           | LocalDef (_,t,_) -> extract_type env db j (lift n t) args
+           | LocalDef (_,_,t,_) -> extract_type env db j (lift n t) args
 	   | _ ->
 	       (* Asks [db] a translation for [n]. *)
 	       if n > List.length db then Tunknown
@@ -335,11 +335,11 @@ and extract_type_scheme env db c p =
   else
     let c = whd_betaiotazeta c in
     match Constr.kind c with
-      | Lambda (n,t,d) ->
-          extract_type_scheme (push_rel_assum (n,t) env) db d (p-1)
+      | Lambda (n,r,t,d) ->
+          extract_type_scheme (push_rel_assum (n,r,t) env) db d (p-1)
       | _ ->
           let rels = fst (splay_prod env none (EConstr.of_constr (type_of env c))) in
-          let rels = List.map (on_snd EConstr.Unsafe.to_constr) rels in
+          let rels = List.map (on_pi3 EConstr.Unsafe.to_constr) rels in
           let env = push_rels_assum rels env in
           let eta_args = List.rev_map mkRel (List.interval 1 p) in
           extract_type env db 0 (lift p c) eta_args
@@ -448,8 +448,8 @@ and extract_really_ind env kn mib =
 	(* Now we're sure it's a record. *)
 	(* First, we find its field names. *)
 	let rec names_prod t = match Constr.kind t with
-	  | Prod(n,_,t) -> n::(names_prod t)
-	  | LetIn(_,_,_,t) -> names_prod t
+          | Prod(n,_,_,t) -> n::(names_prod t)
+          | LetIn(_,_,_,_,t) -> names_prod t
 	  | Cast(t,_,_) -> names_prod t
 	  | _ -> []
 	in
@@ -507,8 +507,8 @@ and extract_really_ind env kn mib =
 
 and extract_type_cons env db dbmap c i =
   match Constr.kind (whd_all env c) with
-    | Prod (n,t,d) ->
-	let env' = push_rel_assum (n,t) env in
+    | Prod (n,r,t,d) ->
+        let env' = push_rel_assum (n,r,t) env in
 	let db' = (try Int.Map.find i dbmap with Not_found -> 0) :: db in
 	let l = extract_type_cons env' db' dbmap d (i+1) in
 	(extract_type env db 0 t []) :: l
@@ -570,15 +570,15 @@ let rec extract_term env mle mlt c args =
   match Constr.kind c with
     | App (f,a) ->
 	extract_term env mle mlt f (Array.to_list a @ args)
-    | Lambda (n, t, d) ->
+    | Lambda (n, r, t, d) ->
 	let id = id_of_name n in
 	(match args with
 	   | a :: l ->
 	       (* We make as many [LetIn] as possible. *)
- 	       let d' = mkLetIn (Name id,a,t,applistc d (List.map (lift 1) l))
+               let d' = mkLetIn (Name id,r,a,t,applistc d (List.map (lift 1) l))
 	       in extract_term env mle mlt d' []
 	   | [] ->
-	       let env' = push_rel_assum (Name id, t) env in
+               let env' = push_rel_assum (Name id, r, t) env in
 	       let id, a =
 		 try check_default env t; Id id, new_meta()
 		 with NotDefault d -> Dummy, Tdummy d
@@ -588,9 +588,9 @@ let rec extract_term env mle mlt c args =
 	       let magic = needs_magic (mlt, Tarr (a, b)) in
 	       let d' = extract_term env' (Mlenv.push_type mle a) b d [] in
 	       put_magic_if magic (MLlam (id, d')))
-    | LetIn (n, c1, t1, c2) ->
+    | LetIn (n, r, c1, t1, c2) ->
 	let id = id_of_name n in
-	let env' = push_rel (LocalDef (Name id, c1, t1)) env in
+        let env' = push_rel (LocalDef (Name id, r, c1, t1)) env in
 	(* We directly push the args inside the [LetIn].
            TODO: the opt_let_app flag is supposed to prevent that *)
 	let args' = List.map (lift 1) args in
@@ -851,7 +851,7 @@ and extract_case env mle ((kn,i) as ip,c,br) mlt =
 
 (*s Extraction of a (co)-fixpoint. *)
 
-and extract_fix env mle i (fi,ti,ci as recd) mlt =
+and extract_fix env mle i (fi,ri,ti,ci as recd) mlt =
   let env = push_rec_types recd env in
   let metas = Array.map new_meta fi in
   metas.(i) <- mlt;
@@ -866,7 +866,7 @@ and extract_fix env mle i (fi,ti,ci as recd) mlt =
 
 let decomp_lams_eta_n n m env c t =
   let rels = fst (splay_prod_n env none n (EConstr.of_constr t)) in
-  let rels = List.map (fun (LocalAssum (id,c) | LocalDef (id,_,c)) -> (id,EConstr.Unsafe.to_constr c)) rels in
+  let rels = List.map (fun (LocalAssum (id,r,c) | LocalDef (id,r,_,c)) -> (id,r,EConstr.Unsafe.to_constr c)) rels in
   let rels',c = decompose_lam c in
   let d = n - m in
   (* we'd better keep rels' as long as possible. *)
@@ -933,7 +933,7 @@ let extract_std_constant env kn body typ =
   (* The initial ML environment. *)
   let mle = List.fold_left Mlenv.push_std_type Mlenv.empty l in
   (* The lambdas names. *)
-  let ids = List.map (fun (n,_) -> Id (id_of_name n)) rels in
+  let ids = List.map (fun (n,_,_) -> Id (id_of_name n)) rels in
   (* The according Coq environment. *)
   let env = push_rels_assum rels env in
   (* The real extraction: *)
@@ -955,7 +955,7 @@ let extract_axiom env kn typ =
   let s = sign_with_implicits (ConstRef kn) s 0 in
   type_expunge_from_sign env s t
 
-let extract_fixpoint env vkn (fi,ti,ci) =
+let extract_fixpoint env vkn (fi,ri,ti,ci) =
   let n = Array.length vkn in
   let types = Array.make n (Tdummy Kprop)
   and terms = Array.make n (MLdummy Kprop) in

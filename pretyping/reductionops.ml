@@ -459,7 +459,7 @@ struct
         aux (Array.fold_left2 f (f o t1 t2) a1 a2) q1 q2
       | Proj (n1,m1,p1,_) :: q1, Proj (n2,m2,p2,_) :: q2 ->
         aux o q1 q2
-      | Fix ((_,(_,a1,b1)),s1,_) :: q1, Fix ((_,(_,a2,b2)),s2,_) :: q2 ->
+      | Fix ((_,(_,_,a1,b1)),s1,_) :: q1, Fix ((_,(_,_,a2,b2)),s2,_) :: q2 ->
         let o' = aux (Array.fold_left2 f (Array.fold_left2 f o b1 b2) a1 a2) (List.rev s1) (List.rev s2) in
         aux o' q1 q2
       | Cst (cst1,_,_,params1,_) :: q1, Cst (cst2,_,_,params2,_) :: q2 ->
@@ -474,10 +474,10 @@ struct
 			       | App (i,a,j) ->
 				  let le = j - i + 1 in
 				  App (0,Array.map f (Array.sub a i le), le-1)
-			       | Case (info,ty,br,alt) -> Case (info, f ty, Array.map f br, alt)
-			       | Fix ((r,(na,ty,bo)),arg,alt) ->
-				  Fix ((r,(na,Array.map f ty, Array.map f bo)),map f arg,alt)
-			       | Cst (cst,curr,remains,params,alt) ->
+                               | Case (info,ty,br,alt) -> Case (info, f ty, Array.map f br, alt)
+                               | Fix ((r,(na,rs,ty,bo)),arg,alt) ->
+                                  Fix ((r,(na,rs,Array.map f ty, Array.map f bo)),map f arg,alt)
+                               | Cst (cst,curr,remains,params,alt) ->
 				 Cst (cst,curr,remains,map f params,alt)
   ) x
 
@@ -645,7 +645,7 @@ let local_strong whdfun sigma =
 let rec strong_prodspine redfun sigma c =
   let x = redfun sigma c in
   match EConstr.kind sigma x with
-    | Prod (na,a,b) -> mkProd (na,a,strong_prodspine redfun sigma b)
+    | Prod (na,r,a,b) -> mkProd (na,r,a,strong_prodspine redfun sigma b)
     | _ -> x
 
 (*************************************)
@@ -659,7 +659,7 @@ let eta = CClosure.RedFlags.mkflags [CClosure.RedFlags.fETA]
 let apply_subst recfun env sigma refold cst_l t stack =
   let rec aux env cst_l t stack =
     match (Stack.decomp stack, EConstr.kind sigma t) with
-    | Some (h,stacktl), Lambda (_,_,c) ->
+    | Some (h,stacktl), Lambda (_,_,_,c) ->
        let cst_l' = if refold then Cst_stack.add_param h cst_l else cst_l in
        aux (h::env) cst_l' c stacktl
     | _ -> recfun sigma cst_l (substl env t, stack)
@@ -723,7 +723,7 @@ let magicaly_constant_of_fixbody env sigma reference bd = function
     with
     | Not_found -> bd
 
-let contract_cofix ?env sigma ?reference (bodynum,(names,types,bodies as typedbodies)) =
+let contract_cofix ?env sigma ?reference (bodynum,(names,rs,types,bodies as typedbodies)) =
   let nbodies = Array.length bodies in
   let make_Fi j =
     let ind = nbodies-j-1 in
@@ -765,7 +765,7 @@ let reduce_mind_case sigma mia =
 (* contracts fix==FIX[nl;i](A1...Ak;[F1...Fk]{B1....Bk}) to produce
    Bi[Fj --> FIX[nl;j](A1...Ak;[F1...Fk]{B1...Bk})] *)
 
-let contract_fix ?env sigma ?reference ((recindices,bodynum),(names,types,bodies as typedbodies)) =
+let contract_fix ?env sigma ?reference ((recindices,bodynum),(names,rs,types,bodies as typedbodies)) =
     let nbodies = Array.length recindices in
     let make_Fi j =
       let ind = nbodies-j-1 in
@@ -855,11 +855,11 @@ let rec whd_state_gen ?csts ~refold ~tactic_mode flags env sigma =
     match c0 with
     | Rel n when CClosure.RedFlags.red_set flags CClosure.RedFlags.fDELTA ->
       (match lookup_rel n env with
-      | LocalDef (_,body,_) -> whrec Cst_stack.empty (lift n body, stack)
+      | LocalDef (_,_,body,_) -> whrec Cst_stack.empty (lift n body, stack)
       | _ -> fold ())
     | Var id when CClosure.RedFlags.red_set flags (CClosure.RedFlags.fVAR id) ->
       (match lookup_named id env with
-      | LocalDef (_,body,_) ->
+      | LocalDef (_,_,body,_) ->
 	whrec (if refold then Cst_stack.add_cst (mkVar id) cst_l else cst_l) (body, stack)
       | _ -> fold ())
     | Evar ev -> fold ()
@@ -893,7 +893,7 @@ let rec whd_state_gen ?csts ~refold ~tactic_mode flags env sigma =
 		      whrec (Cst_stack.add_cst (mkConstU const) cst_l) (body, app_sk)
 		    in
 		    let rec is_case x = match EConstr.kind sigma x with
-		      | Lambda (_,_, x) | LetIn (_,_,_, x) | Cast (x, _,_) -> is_case x
+                      | Lambda (_,_,_, x) | LetIn (_,_,_,_, x) | Cast (x, _,_) -> is_case x
 		      | App (hd, _) -> is_case hd
 		      | Case _ -> true
 		      | _ -> false in
@@ -954,19 +954,19 @@ let rec whd_state_gen ?csts ~refold ~tactic_mode flags env sigma =
 		       (arg,Stack.Cst(Stack.Cst_proj p,curr,remains,
 				      Stack.append_app [|c|] bef,cst_l)::s'))
 
-    | LetIn (_,b,_,c) when CClosure.RedFlags.red_set flags CClosure.RedFlags.fZETA ->
+    | LetIn (_,_,b,_,c) when CClosure.RedFlags.red_set flags CClosure.RedFlags.fZETA ->
       apply_subst (fun _ -> whrec) [b] sigma refold cst_l c stack
     | Cast (c,_,_) -> whrec cst_l (c, stack)
     | App (f,cl)  ->
       whrec
 	(if refold then Cst_stack.add_args cl cst_l else cst_l)
 	(f, Stack.append_app cl stack)
-    | Lambda (na,t,c) ->
+    | Lambda (na,r,t,c) ->
       (match Stack.decomp stack with
       | Some _ when CClosure.RedFlags.red_set flags CClosure.RedFlags.fBETA ->
 	apply_subst (fun _ -> whrec) [] sigma refold cst_l x stack
       | None when CClosure.RedFlags.red_set flags CClosure.RedFlags.fETA ->
-	let env' = push_rel (LocalAssum (na, t)) env in
+        let env' = push_rel (LocalAssum (na, r, t)) env in
 	let whrec' = whd_state_gen ~refold ~tactic_mode flags env' sigma in
         (match EConstr.kind sigma (Stack.zip ~refold sigma (fst (whrec' (c, Stack.empty)))) with
         | App (f,cl) ->
@@ -1059,11 +1059,11 @@ let local_whd_state_gen flags sigma =
     let c0 = EConstr.kind sigma x in
     let s = (EConstr.of_kind c0, stack) in
     match c0 with
-    | LetIn (_,b,_,c) when CClosure.RedFlags.red_set flags CClosure.RedFlags.fZETA ->
+    | LetIn (_,_,b,_,c) when CClosure.RedFlags.red_set flags CClosure.RedFlags.fZETA ->
       stacklam whrec [b] sigma c stack
     | Cast (c,_,_) -> whrec (c, stack)
     | App (f,cl)  -> whrec (f, Stack.append_app cl stack)
-    | Lambda (_,_,c) ->
+    | Lambda (_,_,_,c) ->
       (match Stack.decomp stack with
       | Some (a,m) when CClosure.RedFlags.red_set flags CClosure.RedFlags.fBETA ->
 	stacklam whrec [a] sigma c m
@@ -1405,8 +1405,9 @@ let plain_instance sigma s c =
 	    (try let g = Metamap.find p s in
 	    match EConstr.kind sigma g with
             | App _ ->
-                let l' = CArray.Fun1.smartmap lift 1 l' in
-                mkLetIn (Name default_plain_instance_ident,g,t,mkApp(mkRel 1, l'))
+              let l' = CArray.Fun1.smartmap lift 1 l' in
+              let r = Sorts.Relevant in (* TODO fix relevance *)
+                mkLetIn (Name default_plain_instance_ident,r,g,t,mkApp(mkRel 1, l'))
             | _ -> mkApp (g,l')
 	    with Not_found -> mkApp (f,l'))
         | _ -> mkApp (irec n f,l'))
@@ -1464,7 +1465,7 @@ let instance sigma s c =
 
 let hnf_prod_app env sigma t n =
   match EConstr.kind sigma (whd_all env sigma t) with
-    | Prod (_,_,b) -> subst1 n b
+    | Prod (_,_,_,b) -> subst1 n b
     | _ -> anomaly ~label:"hnf_prod_app" (Pp.str "Need a product.")
 
 let hnf_prod_appvect env sigma t nl =
@@ -1475,7 +1476,7 @@ let hnf_prod_applist env sigma t nl =
 
 let hnf_lam_app env sigma t n =
   match EConstr.kind sigma (whd_all env sigma t) with
-    | Lambda (_,_,b) -> subst1 n b
+    | Lambda (_,_,_,b) -> subst1 n b
     | _ -> anomaly ~label:"hnf_lam_app" (Pp.str "Need an abstraction.")
 
 let hnf_lam_appvect env sigma t nl =
@@ -1484,16 +1485,16 @@ let hnf_lam_appvect env sigma t nl =
 let hnf_lam_applist env sigma t nl =
   List.fold_left (fun acc t -> hnf_lam_app env sigma acc t) t nl
 
-let bind_assum (na, t) =
-  (na, t)
+let bind_assum (na, r, t) =
+  (na, r, t)
 
 let splay_prod env sigma =
   let rec decrec env m c =
     let t = whd_all env sigma c in
     match EConstr.kind sigma t with
-      | Prod (n,a,c0) ->
-	  decrec (push_rel (LocalAssum (n,a)) env)
-	    (bind_assum (n,a)::m) c0
+      | Prod (n,r,a,c0) ->
+          decrec (push_rel (LocalAssum (n,r,a)) env)
+            (bind_assum (n,r,a)::m) c0
       | _ -> m,t
   in
   decrec env []
@@ -1502,9 +1503,9 @@ let splay_lam env sigma =
   let rec decrec env m c =
     let t = whd_all env sigma c in
     match EConstr.kind sigma t with
-      | Lambda (n,a,c0) ->
-	  decrec (push_rel (LocalAssum (n,a)) env)
-	    (bind_assum (n,a)::m) c0
+      | Lambda (n,r,a,c0) ->
+          decrec (push_rel (LocalAssum (n,r,a)) env)
+            (bind_assum (n,r,a)::m) c0
       | _ -> m,t
   in
   decrec env []
@@ -1513,12 +1514,12 @@ let splay_prod_assum env sigma =
   let rec prodec_rec env l c =
     let t = whd_allnolet env sigma c in
     match EConstr.kind sigma t with
-    | Prod (x,t,c)  ->
-	prodec_rec (push_rel (LocalAssum (x,t)) env)
-	  (Context.Rel.add (LocalAssum (x,t)) l) c
-    | LetIn (x,b,t,c) ->
-	prodec_rec (push_rel (LocalDef (x,b,t)) env)
-	  (Context.Rel.add (LocalDef (x,b,t)) l) c
+    | Prod (x,r,t,c)  ->
+        prodec_rec (push_rel (LocalAssum (x,r,t)) env)
+          (Context.Rel.add (LocalAssum (x,r,t)) l) c
+    | LetIn (x,r,b,t,c) ->
+        prodec_rec (push_rel (LocalDef (x,r,b,t)) env)
+          (Context.Rel.add (LocalDef (x,r,b,t)) l) c
     | Cast (c,_,_)    -> prodec_rec env l c
     | _               -> 
       let t' = whd_all env sigma t in
@@ -1538,9 +1539,9 @@ let sort_of_arity env sigma c = snd (splay_arity env sigma c)
 let splay_prod_n env sigma n =
   let rec decrec env m ln c = if Int.equal m 0 then (ln,c) else
     match EConstr.kind sigma (whd_all env sigma c) with
-      | Prod (n,a,c0) ->
-	  decrec (push_rel (LocalAssum (n,a)) env)
-	    (m-1) (Context.Rel.add (LocalAssum (n,a)) ln) c0
+      | Prod (n,r,a,c0) ->
+          decrec (push_rel (LocalAssum (n,r,a)) env)
+            (m-1) (Context.Rel.add (LocalAssum (n,r,a)) ln) c0
       | _                      -> invalid_arg "splay_prod_n"
   in
   decrec env n Context.Rel.empty
@@ -1548,9 +1549,9 @@ let splay_prod_n env sigma n =
 let splay_lam_n env sigma n =
   let rec decrec env m ln c = if Int.equal m 0 then (ln,c) else
     match EConstr.kind sigma (whd_all env sigma c) with
-      | Lambda (n,a,c0) ->
-	  decrec (push_rel (LocalAssum (n,a)) env)
-	    (m-1) (Context.Rel.add (LocalAssum (n,a)) ln) c0
+      | Lambda (n,r,a,c0) ->
+          decrec (push_rel (LocalAssum (n,r,a)) env)
+            (m-1) (Context.Rel.add (LocalAssum (n,r,a)) ln) c0
       | _                      -> invalid_arg "splay_lam_n"
   in
   decrec env n Context.Rel.empty
@@ -1590,8 +1591,8 @@ let find_conclusion env sigma =
   let rec decrec env c =
     let t = whd_all env sigma c in
     match EConstr.kind sigma t with
-      | Prod (x,t,c0) -> decrec (push_rel (LocalAssum (x,t)) env) c0
-      | Lambda (x,t,c0) -> decrec (push_rel (LocalAssum (x,t)) env) c0
+      | Prod (x,r,t,c0) -> decrec (push_rel (LocalAssum (x,r,t)) env) c0
+      | Lambda (x,r,t,c0) -> decrec (push_rel (LocalAssum (x,r,t)) env) c0
       | t -> t
   in
   decrec env
@@ -1698,7 +1699,7 @@ let head_unfold_under_prod ts env sigma c =
     else mkConstU (cst, u) in
   let rec aux c =
     match EConstr.kind sigma c with
-      | Prod (n,t,c) -> mkProd (n,aux t, aux c)
+      | Prod (n,r,t,c) -> mkProd (n,r,aux t, aux c)
       | _ ->
 	  let (h,l) = decompose_app_vect sigma c in
 	  match EConstr.kind sigma h with
@@ -1710,8 +1711,8 @@ let betazetaevar_applist sigma n c l =
   let rec stacklam n env t stack =
     if Int.equal n 0 then applist (substl env t, stack) else
     match EConstr.kind sigma t, stack with
-    | Lambda(_,_,c), arg::stacktl -> stacklam (n-1) (arg::env) c stacktl
-    | LetIn(_,b,_,c), _ -> stacklam (n-1) (substl env b::env) c stack
+    | Lambda(_,_,_,c), arg::stacktl -> stacklam (n-1) (arg::env) c stacktl
+    | LetIn(_,_,b,_,c), _ -> stacklam (n-1) (substl env b::env) c stack
     | Evar _, _ -> applist (substl env t, stack)
     | _ -> anomaly (Pp.str "Not enough lambda/let's.") in
   stacklam n [] c l

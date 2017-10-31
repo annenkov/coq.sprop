@@ -64,6 +64,7 @@ let interp_fields_evars env sigma impls_env nots l =
   List.fold_left2
     (fun (env, sigma, uimpls, params, impls) no ((loc, i), b, t) ->
       let sigma, (t', impl) = interp_type_evars_impls env sigma ~impls t in
+      let r = Retyping.relevance_of_type env sigma t' in
       let sigma, b' =
         Option.cata (fun x -> on_snd (fun x -> Some (fst x)) @@
                       interp_casted_constr_evars_impls env sigma ~impls x t') (sigma,None) b in
@@ -73,8 +74,8 @@ let interp_fields_evars env sigma impls_env nots l =
         | Name id -> Id.Map.add id (compute_internalization_data env Constrintern.Method (EConstr.to_constr sigma t') impl) impls
       in
       let d = match b' with
-	      | None -> LocalAssum (i,t')
-	      | Some b' -> LocalDef (i,b',t')
+              | None -> LocalAssum (i,r,t')
+              | Some b' -> LocalDef (i,r,b',t')
       in
       List.iter (Metasyntax.set_notation_for_interpretation env impls) no;
       (EConstr.push_rel d env, sigma, impl :: uimpls, d::params, impls))
@@ -139,8 +140,11 @@ let typecheck_params_and_fields finite def id poly pl t ps nots fs =
       let sigma, s = Evd.new_sort_variable uvarkind sigma in
       sigma, EConstr.mkSort s, s, true
   in
+  let relevance = Sorts.relevance_of_sort sort in
   let arity = EConstr.it_mkProd_or_LetIn typ newps in
-  let env_ar = EConstr.push_rel_context newps (EConstr.push_rel (LocalAssum (Name id,arity)) env0) in
+  let env_ar = EConstr.push_rel_context newps
+      (EConstr.push_rel (LocalAssum (Name id,relevance,arity)) env0)
+  in
   let assums = List.filter is_local_assum newps in
   let params = List.map (RelDecl.get_name %> Name.get_id) assums in
   let ty = Inductive (params,(finite != Declarations.BiFinite)) in
@@ -173,15 +177,15 @@ let typecheck_params_and_fields finite def id poly pl t ps nots fs =
   let ubinders = Evd.universe_binders sigma in
     List.iter (iter_constr ce) (List.rev newps);
     List.iter (iter_constr ce) (List.rev newfs);
-    ubinders, univs, typ, template, imps, newps, impls, newfs
+    ubinders, univs, typ, relevance, template, imps, newps, impls, newfs
 
 let degenerate_decl decl =
   let id = match RelDecl.get_name decl with
     | Name id -> id
     | Anonymous -> anomaly (Pp.str "Unnamed record variable.") in
   match decl with
-    | LocalAssum (_,t) -> (id, LocalAssumEntry t)
-    | LocalDef (_,b,_) -> (id, LocalDefEntry b)
+    | LocalAssum (_,_,t) -> (id, LocalAssumEntry t)
+    | LocalDef (_,_,b,_) -> (id, LocalDefEntry b)
 
 type record_error =
   | MissingProj of Id.t * Id.t list
@@ -278,7 +282,8 @@ let declare_projections indsp ctx ?(kind=StructureComponent) binder_name coers u
   in
   let paramdecls = Inductive.inductive_paramdecls (mib, u) in
   let indu = indsp, u in
-  let r = mkIndU (indsp,u) in
+  let r = mkIndU indu in
+  let rp_relevance = Inductive.relevance_of_inductive env indsp in
   let rp = applist (r, Context.Rel.to_extended_list mkRel 0 paramdecls) in
   let paramargs = Context.Rel.to_extended_list mkRel 1 paramdecls in (*def in [[params;x:rp]]*)
   let x = Name binder_name in
@@ -317,20 +322,21 @@ let declare_projections indsp ctx ?(kind=StructureComponent) binder_name coers u
 	      else
 		let ccl = subst_projection fid subst ti in
 		let body = match decl with
-		  | LocalDef (_,ci,_) -> subst_projection fid subst ci
-		  | LocalAssum _ ->
+                  | LocalDef (_,_,ci,_) -> subst_projection fid subst ci
+                  | LocalAssum (_,rci,_) ->
 	            (* [ccl] is defined in context [params;x:rp] *)
 		    (* [ccl'] is defined in context [params;x:rp;x:rp] *)
 		    let ccl' = liftn 1 2 ccl in
-		    let p = mkLambda (x, lift 1 rp, ccl') in
+                    let p = mkLambda (x, rp_relevance, lift 1 rp, ccl') in
 		    let branch = it_mkLambda_or_LetIn (mkRel nfi) lifted_fields in
-		    let ci = Inductiveops.make_case_info env indsp LetStyle in
-		      mkCase (ci, p, mkRel 1, [|branch|]) 
-		in
+                    let ci = Inductiveops.make_case_info env indsp rci LetStyle in
+                    (* Record projections have no is *)
+                    mkCase (ci, p, mkRel 1, [|branch|])
+                in
 		let proj =
-	          it_mkLambda_or_LetIn (mkLambda (x,rp,body)) paramdecls in
+                  it_mkLambda_or_LetIn (mkLambda (x,rp_relevance,rp,body)) paramdecls in
 		let projtyp =
-                  it_mkProd_or_LetIn (mkProd (x,rp,ccl)) paramdecls in
+                  it_mkProd_or_LetIn (mkProd (x,rp_relevance,rp,ccl)) paramdecls in
 	        try
 		  let entry = {
 		    const_entry_body =
@@ -442,7 +448,7 @@ let implicits_of_context ctx =
     in ExplByPos (i, explname), (true, true, true))
     1 (List.rev (Anonymous :: (List.map RelDecl.get_name ctx)))
 
-let declare_class finite def cum ubinders univs id idbuild paramimpls params arity
+let declare_class finite def cum ubinders univs id idbuild paramimpls params arity relevance
     template fieldimpls fields ?(kind=StructureComponent) is_coe coers priorities sign =
   let fieldimpls =
     (* Make the class implicit in the projections, and the params if applicable. *)
@@ -453,7 +459,7 @@ let declare_class finite def cum ubinders univs id idbuild paramimpls params ari
   let binder_name = Namegen.next_ident_away (snd id) (Termops.vars_of_env (Global.env())) in
   let impl, projs =
     match fields with
-    | [LocalAssum (Name proj_name, field) | LocalDef (Name proj_name, _, field)] when def ->
+    | [LocalAssum (Name proj_name, _, field) | LocalDef (Name proj_name, _, _, field)] when def ->
       let class_body = it_mkLambda_or_LetIn field params in
       let class_type = it_mkProd_or_LetIn arity params in
       let class_entry = 
@@ -468,9 +474,9 @@ let declare_class finite def cum ubinders univs id idbuild paramimpls params ari
       let inst_type = appvectc (mkConstU cstu)
 			       (Termops.rel_vect 0 (List.length params)) in
       let proj_type =
-	it_mkProd_or_LetIn (mkProd(Name binder_name, inst_type, lift 1 field)) params in
+        it_mkProd_or_LetIn (mkProd(Name binder_name, relevance, inst_type, lift 1 field)) params in
       let proj_body =
-	it_mkLambda_or_LetIn (mkLambda (Name binder_name, inst_type, mkRel 1)) params in
+        it_mkLambda_or_LetIn (mkLambda (Name binder_name, relevance, inst_type, mkRel 1)) params in
       let proj_entry = Declare.definition_entry ~types:proj_type ~univs proj_body in
       let proj_cst = Declare.declare_constant proj_name
         (DefinitionEntry proj_entry, IsDefinition Definition)
@@ -543,12 +549,13 @@ let declare_class finite def cum ubinders univs id idbuild paramimpls params ari
 
 let add_constant_class cst =
   let ty, univs = Global.type_of_global_in_context (Global.env ()) (ConstRef cst) in
+  let r = (Environ.lookup_constant cst (Global.env ())).const_relevance in
   let ctx, arity = decompose_prod_assum ty in
   let tc = 
     { cl_univs = univs;
       cl_impl = ConstRef cst;
       cl_context = (List.map (const None) ctx, ctx);
-      cl_props = [LocalAssum (Anonymous, arity)];
+      cl_props = [LocalAssum (Anonymous, r, arity)];
       cl_projs = [];
       cl_strict = !typeclasses_strict;
       cl_unique = !typeclasses_unique
@@ -565,10 +572,11 @@ let add_inductive_class ind =
     let env = push_rel_context ctx env in
     let inst = Univ.make_abstract_instance univs in
     let ty = Inductive.type_of_inductive env ((mind, oneind), inst) in
+    let r = Inductive.relevance_of_inductive env ind in
       { cl_univs = univs;
         cl_impl = IndRef ind;
 	cl_context = List.map (const None) ctx, ctx;
-	cl_props = [LocalAssum (Anonymous, ty)];
+        cl_props = [LocalAssum (Anonymous, r, ty)];
 	cl_projs = [];
 	cl_strict = !typeclasses_strict;
 	cl_unique = !typeclasses_unique }
@@ -603,7 +611,7 @@ let definition_structure (kind,cum,poly,finite,(is_coe,((loc,idstruc),pl)),ps,cf
   if isnot_class && List.exists (fun opt -> not (Option.is_empty opt)) priorities then
     user_err Pp.(str "Priorities only allowed for type class substructures");
   (* Now, younger decl in params and fields is on top *)
-  let pl, univs, arity, template, implpars, params, implfs, fields =
+  let pl, univs, arity, relevance, template, implpars, params, implfs, fields =
     States.with_state_protection (fun () ->
       typecheck_params_and_fields finite (kind = Class true) idstruc poly pl s ps notations fs) () in
   let sign = structure_signature (fields@params) in
@@ -611,8 +619,8 @@ let definition_structure (kind,cum,poly,finite,(is_coe,((loc,idstruc),pl)),ps,cf
   | Class def ->
      let priorities = List.map (fun id -> {hint_priority = id; hint_pattern = None}) priorities in
      let gr = declare_class finite def cum pl univs (loc,idstruc) idbuild
-	  implpars params arity template implfs fields is_coe coers priorities sign in
-	gr
+          implpars params arity relevance template implfs fields is_coe coers priorities sign in
+        gr
     | _ ->
       let implfs = List.map
 	  (fun impls -> implpars @ Impargs.lift_implicits

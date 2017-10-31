@@ -240,10 +240,10 @@ let compute_implicits_gen strict strongly_strict revpat contextual all env t =
   let rec aux env avoid n names t =
     let t = whd_all env t in
     match kind t with
-      | Prod (na,a,b) ->
+      | Prod (na,r,a,b) ->
 	  let na',avoid' = find_displayed_name_in all avoid na (names,b) in
 	  add_free_rels_until strict strongly_strict revpat n env a (Hyp (n+1))
-            (aux (push_rel (LocalAssum (na',a)) env) avoid' (n+1) (na'::names) b)
+            (aux (push_rel (LocalAssum (na',r,a)) env) avoid' (n+1) (na'::names) b)
       | _ ->
 	  rigid := is_rigid_head t;
 	  let names = List.rev names in
@@ -253,9 +253,9 @@ let compute_implicits_gen strict strongly_strict revpat contextual all env t =
 	  else v
   in
   match kind (whd_all env t) with
-    | Prod (na,a,b) ->
+    | Prod (na,r,a,b) ->
 	let na',avoid = find_displayed_name_in all Id.Set.empty na ([],b) in
-	let v = aux (push_rel (LocalAssum (na',a)) env) avoid 1 [na'] b in
+        let v = aux (push_rel (LocalAssum (na',r,a)) env) avoid 1 [na'] b in
 	!rigid, Array.to_list v
     | _ -> true, []
 
@@ -430,8 +430,9 @@ let compute_mib_implicits flags manual kn =
       (Array.mapi  (* No need to lift, arities contain no de Bruijn *)
         (fun i mip ->
 	  (** No need to care about constraints here *)
-	  let ty, _ = Global.type_of_global_in_context env (IndRef (kn,i)) in
-	  Context.Rel.Declaration.LocalAssum (Name mip.mind_typename, ty))
+          let ty, _ = Global.type_of_global_in_context env (IndRef (kn,i)) in
+          let r = Inductive.relevance_of_inductive env (kn,i) in
+          Context.Rel.Declaration.LocalAssum (Name mip.mind_typename, r, ty))
         mib.mind_packets) in
   let env_ar = push_rel_context ar env in
   let imps_one_inductive i mip =

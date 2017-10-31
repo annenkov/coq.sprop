@@ -350,7 +350,7 @@ let in_whnf (t,stk) =
     | FLambda _ -> no_arg_available stk
     | FConstruct _ -> no_case_available stk
     | FCoFix _ -> no_case_available stk
-    | FFix(((ri,n),(_,_,_)),_) -> no_nth_arg_available ri.(n) stk
+    | FFix(((ri,n),_),_) -> no_nth_arg_available ri.(n) stk
     | (FFlex _ | FProd _ | FEvar _ | FInd _ | FAtom _ | FRel _ | FProj _) -> true
     | FLOCKED -> assert false
 
@@ -482,15 +482,15 @@ and eqappr cv_pb l2r infos (lft1,st1) (lft2,st2) cuniv =
         (* Inconsistency: we tolerate that v1, v2 contain shift and update but
            we throw them away *)
         if not (is_empty_stack v1 && is_empty_stack v2) then
-	  anomaly (Pp.str "conversion was given ill-typed terms (FLambda).");
-        let (_,ty1,bd1) = destFLambda mk_clos hd1 in
-        let (_,ty2,bd2) = destFLambda mk_clos hd2 in
+          anomaly (Pp.str "conversion was given ill-typed terms (FLambda).");
+        let (_,r1,ty1,bd1) = destFLambda mk_clos hd1 in
+        let (_,_,ty2,bd2) = destFLambda mk_clos hd2 in
         let el1 = el_stack lft1 v1 in
         let el2 = el_stack lft2 v2 in
         let cuniv = ccnv CONV l2r infos el1 el2 ty1 ty2 cuniv in
         ccnv CONV l2r infos (el_lift el1) (el_lift el2) bd1 bd2 cuniv
 
-    | (FProd (_,c1,c2), FProd (_,c'1,c'2)) ->
+    | (FProd (_,r1,c1,c2), FProd (_,_,c'1,c'2)) ->
         if not (is_empty_stack v1 && is_empty_stack v2) then
 	  anomaly (Pp.str "conversion was given ill-typed terms (FProd).");
 	(* Luo's system *)
@@ -506,7 +506,7 @@ and eqappr cv_pb l2r infos (lft1,st1) (lft2,st2) cuniv =
         | _ ->
           anomaly (Pp.str "conversion was given unreduced term (FLambda).")
         in
-        let (_,_ty1,bd1) = destFLambda mk_clos hd1 in
+        let (_,r1,ty1,bd1) = destFLambda mk_clos hd1 in
         eqappr CONV l2r infos
 	  (el_lift lft1, (bd1, [])) (el_lift lft2, (hd2, eta_expand_stack v2)) cuniv
     | (_, FLambda _) ->
@@ -515,10 +515,10 @@ and eqappr cv_pb l2r infos (lft1,st1) (lft2,st2) cuniv =
         | _ ->
 	  anomaly (Pp.str "conversion was given unreduced term (FLambda).")
 	in
-        let (_,_ty2,bd2) = destFLambda mk_clos hd2 in
+        let (_,r2,ty2,bd2) = destFLambda mk_clos hd2 in
         eqappr CONV l2r infos
 	  (el_lift lft1, (hd1, eta_expand_stack v1)) (el_lift lft2, (bd2, [])) cuniv
-	
+
     (* only one constant, defined var or defined rel *)
     | (FFlex fl1, c2)      ->
        (match unfold_reference infos fl1 with
@@ -602,8 +602,8 @@ and eqappr cv_pb l2r infos (lft1,st1) (lft2,st2) cuniv =
          in convert_stacks l2r infos lft1 lft2 v1 v2 cuniv
        with Not_found -> raise NotConvertible)
 
-    | (FFix (((op1, i1),(_,tys1,cl1)),e1), FFix(((op2, i2),(_,tys2,cl2)),e2)) ->
-	if Int.equal i1 i2 && Array.equal Int.equal op1 op2
+    | (FFix (((op1, i1),(_,r1,tys1,cl1)),e1), FFix(((op2, i2),(_,_,tys2,cl2)),e2)) ->
+        if Int.equal i1 i2 && Array.equal Int.equal op1 op2
 	then
 	  let n = Array.length cl1 in
           let fty1 = Array.map (mk_clos e1) tys1 in
@@ -619,7 +619,7 @@ and eqappr cv_pb l2r infos (lft1,st1) (lft2,st2) cuniv =
           convert_stacks l2r infos lft1 lft2 v1 v2 cuniv
         else raise NotConvertible
 
-    | (FCoFix ((op1,(_,tys1,cl1)),e1), FCoFix((op2,(_,tys2,cl2)),e2)) ->
+    | (FCoFix ((op1,(_,r1,tys1,cl1)),e1), FCoFix((op2,(_,_,tys2,cl2)),e2)) ->
         if Int.equal op1 op2
         then
 	  let n = Array.length cl1 in
@@ -846,7 +846,7 @@ let conv env t1 t2 =
 let beta_applist c l =
   let rec app subst c l =
     match kind c, l with
-    | Lambda(_,_,c), arg::l -> app (arg::subst) c l
+    | Lambda(_,_,_,c), arg::l -> app (arg::subst) c l
     | _ -> Term.applist (substl subst c, l) in
   app [] c l
 
@@ -869,7 +869,7 @@ let betazeta_appvect = Term.lambda_appvect_assum
 
 let hnf_prod_app env t n =
   match kind (whd_all env t) with
-    | Prod (_,_,b) -> subst1 n b
+    | Prod (_,_,_,b) -> subst1 n b
     | _ -> anomaly ~label:"hnf_prod_app" (Pp.str "Need a product.")
 
 let hnf_prod_applist env t nl =
@@ -881,8 +881,8 @@ let hnf_prod_applist_assum env n c l =
       if l == [] then substl subst t
       else anomaly (Pp.str "Too many arguments.")
     else match kind (whd_allnolet env t), l with
-    | Prod(_,_,c), arg::l -> app (n-1) (arg::subst) c l
-    | LetIn(_,b,_,c), _ -> app (n-1) (substl subst b::subst) c l
+    | Prod(_,_,_,c), arg::l -> app (n-1) (arg::subst) c l
+    | LetIn(_,_,b,_,c), _ -> app (n-1) (substl subst b::subst) c l
     | _, [] -> anomaly (Pp.str "Not enough arguments.")
     | _ -> anomaly (Pp.str "Not enough prod/let's.") in
   app n [] c l
@@ -893,8 +893,8 @@ let dest_prod env =
   let rec decrec env m c =
     let t = whd_all env c in
     match kind t with
-      | Prod (n,a,c0) ->
-	  let d = LocalAssum (n,a) in
+      | Prod (n,r,a,c0) ->
+          let d = LocalAssum (n,r,a) in
 	  decrec (push_rel d env) (Context.Rel.add d m) c0
       | _ -> m,t
   in
@@ -905,11 +905,11 @@ let dest_prod_assum env =
   let rec prodec_rec env l ty =
     let rty = whd_allnolet env ty in
     match kind rty with
-    | Prod (x,t,c)  ->
-        let d = LocalAssum (x,t) in
+    | Prod (x,r,t,c)  ->
+        let d = LocalAssum (x,r,t) in
 	prodec_rec (push_rel d env) (Context.Rel.add d l) c
-    | LetIn (x,b,t,c) ->
-        let d = LocalDef (x,b,t) in
+    | LetIn (x,r,b,t,c) ->
+        let d = LocalDef (x,r,b,t) in
 	prodec_rec (push_rel d env) (Context.Rel.add d l) c
     | Cast (c,_,_)    -> prodec_rec env l c
     | _               ->
@@ -923,11 +923,11 @@ let dest_lam_assum env =
   let rec lamec_rec env l ty =
     let rty = whd_allnolet env ty in
     match kind rty with
-    | Lambda (x,t,c)  ->
-        let d = LocalAssum (x,t) in
+    | Lambda (x,r,t,c)  ->
+        let d = LocalAssum (x,r,t) in
 	lamec_rec (push_rel d env) (Context.Rel.add d l) c
-    | LetIn (x,b,t,c) ->
-        let d = LocalDef (x,b,t) in
+    | LetIn (x,r,b,t,c) ->
+        let d = LocalDef (x,r,b,t) in
 	lamec_rec (push_rel d env) (Context.Rel.add d l) c
     | Cast (c,_,_)    -> lamec_rec env l c
     | _               -> l,rty

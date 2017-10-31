@@ -29,7 +29,7 @@ let rec close_fwd e s =
     List.fold_left (fun s decl ->
       let vb = match decl with
                | LocalAssum _ -> Id.Set.empty
-               | LocalDef (_,b,_) -> global_vars_set e b
+               | LocalDef (_,_,b,_) -> global_vars_set e b
       in
       let vty = global_vars_set e (NamedDecl.get_type decl) in
       let vbty = Id.Set.union vb vty in
@@ -165,7 +165,7 @@ let suggest_variable env id =
   if !suggest_proof_using
   then begin
     match lookup_named id env with
-    | LocalDef (_,body,typ) ->
+    | LocalDef (_,_,body,typ) ->
       let ids_typ = global_vars_set env typ in
       let ids_body = global_vars_set env body in
       let used = Id.Set.union ids_body ids_typ in

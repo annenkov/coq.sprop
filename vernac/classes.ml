@@ -87,7 +87,7 @@ let type_ctx_instance env sigma ctx inst subst =
       let (sigma, c'), l =
 	match decl with
         | LocalAssum _ -> interp_casted_constr_evars env sigma (List.hd l) t', List.tl l
-        | LocalDef (_,b,_) -> (sigma, substl subst b), l
+        | LocalDef (_,_,b,_) -> (sigma, substl subst b), l
       in
       let d = RelDecl.get_name decl, Some c', t' in
         aux (sigma, c' :: subst, d :: instctx) l ctx
@@ -167,7 +167,7 @@ let new_instance ?(abstract=false) ?(global=false) ?(refine= !refine_instance)
       List.fold_right (fun decl (args, args') ->
 	match decl with
 	| LocalAssum _ -> (List.tl args, List.hd args :: args')
-        | LocalDef (_,b,_) -> (args, Vars.substl args' b :: args'))
+        | LocalDef (_,_,b,_) -> (args, Vars.substl args' b :: args'))
         cl_context (args, [])
     in
       sigma, cl, u, c', ctx', ctx, len, imps, args
@@ -353,8 +353,8 @@ let named_of_rel_context l =
       (fun decl (subst, ctx) ->
         let id = match RelDecl.get_name decl with Anonymous -> invalid_arg "named_of_rel_context" | Name id -> id in
 	let d = match decl with
-	  | LocalAssum (_,t) -> id, None, substl subst t
-	  | LocalDef (_,b,t) -> id, Some (substl subst b), substl subst t in
+          | LocalAssum (_,_,t) -> id, None, substl subst t
+          | LocalDef (_,_,b,t) -> id, Some (substl subst b), substl subst t in
 	  (mkVar id :: subst, d :: ctx))
       l ([], [])
   in ctx

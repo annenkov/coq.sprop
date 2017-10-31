@@ -893,7 +893,8 @@ let descend_then env sigma head dirn =
       let brl =
         List.map build_branch
           (List.interval 1 (Array.length mip.mind_consnames)) in
-      let ci = make_case_info env ind RegularStyle in
+      let rci = Sorts.Relevant in (* TODO relevance *)
+      let ci = make_case_info env ind rci RegularStyle in
       Inductiveops.make_case_or_project env sigma indf ci p head (Array.of_list brl)))
 
 (* Now we need to construct the discriminator, given a discriminable
@@ -938,7 +939,8 @@ let build_selector env sigma dirn c ind special default =
     it_mkLambda_or_LetIn endpt args in
   let brl =
     List.map build_branch(List.interval 1 (Array.length mip.mind_consnames)) in
-  let ci = make_case_info env ind RegularStyle in
+  let rci = Sorts.Relevant in (* TODO relevance *)
+  let ci = make_case_info env ind rci RegularStyle in
   let ans = Inductiveops.make_case_or_project env sigma indf ci p c (Array.of_list brl) in
   ans
 
@@ -1003,7 +1005,7 @@ let discrimination_pf e (t,t1,t2) discriminator lbeq =
   Proofview.tclEFFECTS eff <*>
     pf_constr_of_global eq_elim >>= fun eq_elim ->
     Proofview.tclUNIT
-       (applist (eq_elim, [t;t1;mkNamedLambda e t discriminator;i;t2]), absurd_term)
+       (applist (eq_elim, [t;t1;mkNamedLambda e Sorts.Relevant t discriminator;i;t2]), absurd_term)
 
 
 let eq_baseid = Id.of_string "e"
@@ -1021,7 +1023,7 @@ let discr_positions env sigma (lbeq,eqn,(t,t1,t2)) eq_clause cpath dirn =
   build_coq_True () >>= fun true_0 ->
   build_coq_False () >>= fun false_0 ->
   let e = next_ident_away eq_baseid (vars_of_env env) in
-  let e_env = push_named (Context.Named.Declaration.LocalAssum (e,t)) env in
+  let e_env = push_named (Context.Named.Declaration.LocalAssum (e,Sorts.Relevant,t)) env in
   let discriminator =
     try
       Proofview.tclUNIT
@@ -1031,7 +1033,7 @@ let discr_positions env sigma (lbeq,eqn,(t,t1,t2)) eq_clause cpath dirn =
   in
     discriminator >>= fun discriminator ->
     discrimination_pf e (t,t1,t2) discriminator lbeq >>= fun (pf, absurd_term) ->
-    let pf_ty = mkArrow eqn absurd_term in
+    let pf_ty = mkArrow eqn Sorts.Relevant absurd_term in
     let absurd_clause = apply_on_clause (pf,pf_ty) eq_clause in
     let pf = Clenvtac.clenv_value_cast_meta absurd_clause in
     tclTHENS (assert_after Anonymous absurd_term)
@@ -1069,7 +1071,7 @@ let onNegatedEquality with_evars tac =
     let ccl = Proofview.Goal.concl gl in
     let env = Proofview.Goal.env gl in
     match EConstr.kind sigma (hnf_constr env sigma ccl) with
-    | Prod (_,t,u) when is_empty_type sigma u ->
+    | Prod (_,_,t,u) when is_empty_type sigma u ->
         tclTHEN introf
           (onLastHypId (fun id ->
             onEquality with_evars tac (mkVar id,NoBindings)))
@@ -1127,7 +1129,7 @@ let make_tuple env sigma (rterm,rty) lind =
   (* We move [lind] to [1] and lift other rels > [lind] by 1 *)
   let rty = lift (1-lind) (liftn lind (lind+1) rty) in
   (* Now [lind] is [mkRel 1] and we abstract on (na:a) *)
-  let p = mkLambda (na, a, rty) in
+  let p = mkLambda (na, Sorts.Relevant, a, rty) in
   let sigma, exist_term = Evd.fresh_global env sigma sigdata.intro in
   let sigma, sig_term = Evd.fresh_global env sigma sigdata.typ in
   let exist_term = EConstr.of_constr exist_term in
@@ -1386,13 +1388,13 @@ let simplify_args env sigma t =
 
 let inject_at_positions env sigma l2r (eq,_,(t,t1,t2)) eq_clause posns tac =
   let e = next_ident_away eq_baseid (vars_of_env env) in
-  let e_env = push_named (LocalAssum (e,t)) env in
+  let e_env = push_named (LocalAssum (e,Sorts.Relevant,t)) env in
   let evdref = ref sigma in
   let filter (cpath, t1', t2') =
     try
       (* arbitrarily take t1' as the injector default value *)
       let sigma, (injbody,resty) = build_injector e_env !evdref t1' (mkVar e) cpath in
-      let injfun = mkNamedLambda e t injbody in
+      let injfun = mkNamedLambda e Sorts.Relevant t injbody in
       let sigma,congr = Evd.fresh_global env sigma eq.congr in
       let congr = EConstr.of_constr congr in
       let pf = applist(congr,[t;resty;injfun;t1;t2]) in
@@ -1578,9 +1580,9 @@ let subst_tuple_term env sigma dep_pair1 dep_pair2 b =
   (* We build the expected goal *)
   let abst_B =
     List.fold_right
-      (fun (e,t) body -> lambda_create env sigma (t,subst_term sigma e body)) e1_list b in
+      (fun (e,t) body -> lambda_create env sigma (Sorts.Relevant,t,subst_term sigma e body)) e1_list b in
   let pred_body = beta_applist sigma (abst_B,proj_list) in
-  let body = mkApp (lambda_create env sigma (typ,pred_body),[|dep_pair1|]) in
+  let body = mkApp (lambda_create env sigma (Sorts.Relevant,typ,pred_body),[|dep_pair1|]) in
   let expected_goal = beta_applist sigma (abst_B,List.map fst e2_list) in
   (* Simulate now the normalisation treatment made by Logic.mk_refgoals *)
   let expected_goal = nf_betaiota env sigma expected_goal in

@@ -32,7 +32,7 @@ let typecheck_evar ev env sigma =
     let _ = Typing.e_sort_of env evdref t in
     let () = match decl with
     | LocalAssum _ -> ()
-    | LocalDef (_,body,_) -> Typing.e_check env evdref (EConstr.of_constr body) t
+    | LocalDef (_,_,body,_) -> Typing.e_check env evdref (EConstr.of_constr body) t
     in
     (!evdref, Environ.push_named decl env)
   in

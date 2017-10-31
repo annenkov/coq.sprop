@@ -144,14 +144,15 @@ let check_fix env cb i =
 	  | _ -> raise Impossible)
     | Undef _ | OpaqueDef _ -> raise Impossible
 
-let prec_declaration_equal (na1, ca1, ta1) (na2, ca2, ta2) =
+let prec_declaration_equal (na1, r1, ca1, ta1) (na2, r2, ca2, ta2) =
   Array.equal Name.equal na1 na2 &&
+  Array.equal Sorts.relevance_equal r1 r2 &&
   Array.equal Constr.equal ca1 ca2 &&
   Array.equal Constr.equal ta1 ta2
 
 let factor_fix env l cb msb =
   let _,recd as check = check_fix env cb 0 in
-  let n = Array.length (let fi,_,_ = recd in fi) in
+  let n = Array.length (let fi,_,_,_ = recd in fi) in
   if Int.equal n 1 then [|l|], recd, msb
   else begin
     if List.length msb < n-1 then raise Impossible;

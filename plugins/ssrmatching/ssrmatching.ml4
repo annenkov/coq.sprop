@@ -368,11 +368,11 @@ let pf_unify_HO gl t1 t2 =
 let iter_constr_LR f c = match kind c with
   | Evar (k, a) -> Array.iter f a
   | Cast (cc, _, t) -> f cc; f t  
-  | Prod (_, t, b) | Lambda (_, t, b)  -> f t; f b
-  | LetIn (_, v, t, b) -> f v; f t; f b
+  | Prod (_, _, t, b) | Lambda (_, _, t, b)  -> f t; f b
+  | LetIn (_, _, v, t, b) -> f v; f t; f b
   | App (cf, a) -> f cf; Array.iter f a
   | Case (_, p, v, b) -> f v; f p; Array.iter f b
-  | Fix (_, (_, t, b)) | CoFix (_, (_, t, b)) ->
+  | Fix (_, (_, _, t, b)) | CoFix (_, (_, _, t, b)) ->
     for i = 0 to Array.length t - 1 do f t.(i); f b.(i) done
   | Proj(_,a) -> f a
   | (Rel _ | Meta _ | Var _   | Sort _ | Const _ | Ind _ | Construct _) -> ()
@@ -442,10 +442,10 @@ let evars_for_FO ~hack env sigma0 (ise0:evar_map) c0 =
     let evi = Evd.find !sigma k in
     let dc = List.firstn (max 0 (Array.length a - nenv)) (evar_filtered_context evi) in
     let abs_dc (d, c) = function
-    | Context.Named.Declaration.LocalDef (x, b, t) ->
-        d, mkNamedLetIn x (put b) (put t) c
-    | Context.Named.Declaration.LocalAssum (x, t) ->
-        mkVar x :: d, mkNamedProd x (put t) c in
+    | Context.Named.Declaration.LocalDef (x, r, b, t) ->
+        d, mkNamedLetIn x r (put b) (put t) c
+    | Context.Named.Declaration.LocalAssum (x, r, t) ->
+        mkVar x :: d, mkNamedProd x r (put t) c in
     let a, t =
       Context.Named.fold_inside abs_dc ~init:([], (put evi.evar_concl)) dc in
     let m = Evarutil.new_meta () in
@@ -477,7 +477,7 @@ let mk_tpattern ?p_origin ?(hack=false) env sigma0 (ise, t) ok dir p =
       | Some (dir, rule) ->
 	errorstrm (str "indeterminate " ++ pr_dir_side dir
           ++ str " in " ++ pr_constr_pat rule))
-    | LetIn (_, v, _, b) ->
+    | LetIn (_, _, v, _, b) ->
       if b <> mkRel 1 then KpatLet, f, a else KpatFlex, v, a
     | Lambda _ -> KpatLam, f, a
     | _ -> KpatRigid, f, a in
@@ -608,13 +608,13 @@ let match_upats_FO upats env sigma0 ise orig_c =
          if skip || not (closed0 c') then () else try
            let _ = match u.up_k with
            | KpatFlex ->
-             let kludge v = mkLambda (Anonymous, mkProp, v) in
+             let kludge v = mkLambda (Anonymous, Sorts.Relevant, mkProp, v) in
              unif_FO env ise (kludge u.up_FO) (kludge c')
            | KpatLet ->
              let kludge vla =
                let vl, a = safeDestApp vla in
-               let x, v, t, b = destLetIn vl in
-               mkApp (mkLambda (x, t, b), Array.cons v a) in
+               let x, r, v, t, b = destLetIn vl in
+               mkApp (mkLambda (x, r, t, b), Array.cons v a) in
              unif_FO env ise (kludge u.up_FO) (kludge c')
            | _ -> unif_FO env ise u.up_FO c' in
            let ise' = (* Unify again using HO to assign evars *)
@@ -659,11 +659,11 @@ let match_upats_HO ~on_instance upats env sigma0 ise c =
           let _, pka = destEvar u.up_f and _, ka = destEvar f in
           unif_HO_args env ise pka 0 ka
         | KpatLet ->
-          let x, v, t, b = destLetIn f in
-          let _, pv, _, pb = destLetIn u.up_f in
+          let x, r, v, t, b = destLetIn f in
+          let _, _, pv, _, pb = destLetIn u.up_f in
           let ise' = unif_HO env ise (EConstr.of_constr pv) (EConstr.of_constr v) in
           unif_HO
-            (Environ.push_rel (Context.Rel.Declaration.LocalAssum(x, t)) env)
+            (Environ.push_rel (Context.Rel.Declaration.LocalAssum(x, r, t)) env)
             ise' (EConstr.of_constr pb) (EConstr.of_constr b)
         | KpatFlex | KpatProj _ ->
           unif_HO env ise (EConstr.of_constr u.up_f) (EConstr.of_constr(mkSubApp f (i - Array.length u.up_a) a))
@@ -739,11 +739,11 @@ let mk_tpattern_matcher ?(all_instances=false)
   let match_EQ env sigma u = 
     match u.up_k with
     | KpatLet ->
-      let x, pv, t, pb = destLetIn u.up_f in
+      let x, r, pv, t, pb = destLetIn u.up_f in
       let env' =
-        Environ.push_rel (Context.Rel.Declaration.LocalAssum(x, t)) env in
+        Environ.push_rel (Context.Rel.Declaration.LocalAssum(x, r, t)) env in
       let match_let f = match kind f with
-      | LetIn (_, v, _, b) -> unif_EQ env sigma pv v && unif_EQ env' sigma pb b
+      | LetIn (_, _, v, _, b) -> unif_EQ env sigma pv v && unif_EQ env' sigma pb b
       | _ -> false in match_let
     | KpatFixed -> equal u.up_f
     | KpatConst -> equal u.up_f
@@ -825,8 +825,8 @@ let rec uniquize = function
         let ctx_item =
           match rd with
           | Context.Rel.Declaration.LocalAssum _ as x -> x
-          | Context.Rel.Declaration.LocalDef (x,_,y) ->
-              Context.Rel.Declaration.LocalAssum(x,y) in
+          | Context.Rel.Declaration.LocalDef (x,r,_,y) ->
+              Context.Rel.Declaration.LocalAssum(x,r,y) in
         EConstr.push_rel ctx_item env, h' + 1 in
       let self acc c = EConstr.of_constr (subst_loop acc (EConstr.Unsafe.to_constr c)) in
       let f = EConstr.of_constr f in
@@ -1184,7 +1184,7 @@ let interp_pattern ?wit_ssrpatternarg ist gl red redty =
     let mk x p = match red with X_In_T _ -> X_In_T(x,p) | _ -> In_X_In_T(x,p) in
     let rp = mkXLetIn (Name x) rp in
     let sigma, rp = interp_term ist gl rp in
-    let _, h, _, rp = destLetIn rp in
+    let _, _, h, _, rp = destLetIn rp in
     let sigma = cleanup_XinE h x rp sigma in
     let rp = subst1 h (nf_evar sigma rp) in
     sigma, mk h rp
@@ -1193,7 +1193,7 @@ let interp_pattern ?wit_ssrpatternarg ist gl red redty =
       match red with E_In_X_In_T _ ->E_In_X_In_T(e,x,p)|_->E_As_X_In_T(e,x,p) in
     let rp = mkXLetIn (Name x) rp in
     let sigma, rp = interp_term ist gl rp in
-    let _, h, _, rp = destLetIn rp in
+    let _, _, h, _, rp = destLetIn rp in
     let sigma = cleanup_XinE h x rp sigma in
     let rp = subst1 h (nf_evar sigma rp) in
     let sigma, e = interp_term ist (re_sig (sig_it gl) sigma) e in
@@ -1394,7 +1394,7 @@ let ssrpatterntac _ist (arg_ist,arg) gl =
   let t = EConstr.of_constr t in
   let concl_x = EConstr.of_constr concl_x in
   let gl, tty = pf_type_of gl t in
-  let concl = EConstr.mkLetIn (Name (Id.of_string "selected"), t, tty, concl_x) in
+  let concl = EConstr.mkLetIn (Name (Id.of_string "selected"), Sorts.Relevant, t, tty, concl_x) in
   Proofview.V82.of_tactic (convert_concl concl DEFAULTcast) gl
 
 (* Register "ssrpattern" tactic *)

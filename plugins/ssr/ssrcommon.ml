@@ -404,31 +404,31 @@ let convert_concl t = Tactics.convert_concl t Term.DEFAULTcast
 
 let rename_hd_prod orig_name_ref gl =
   match EConstr.kind (project gl) (pf_concl gl) with
-  | Term.Prod(_,src,tgt) ->
-      Proofview.V82.of_tactic (convert_concl_no_check (EConstr.mkProd (!orig_name_ref,src,tgt))) gl
+  | Term.Prod(_,_,src,tgt) ->
+      Proofview.V82.of_tactic (convert_concl_no_check (EConstr.mkProd (!orig_name_ref,Sorts.Relevant,src,tgt))) gl
   | _ -> CErrors.anomaly (str "gentac creates no product")
 
 (* Reduction that preserves the Prod/Let spine of the "in" tactical. *)
 
 let inc_safe n = if n = 0 then n else n + 1
 let rec safe_depth s c = match EConstr.kind s c with
-| LetIn (Name x, _, _, c') when is_discharged_id x -> safe_depth s c' + 1
-| LetIn (_, _, _, c') | Prod (_, _, c') -> inc_safe (safe_depth s c')
+| LetIn (Name x, _, _, _, c') when is_discharged_id x -> safe_depth s c' + 1
+| LetIn (_, _, _, _, c') | Prod (_, _, _, c') -> inc_safe (safe_depth s c')
 | _ -> 0 
 
 let red_safe (r : Reductionops.reduction_function) e s c0 =
   let rec red_to e c n = match EConstr.kind s c with
-  | Prod (x, t, c') when n > 0 ->
-    let t' = r e s t in let e' = EConstr.push_rel (RelDecl.LocalAssum (x, t')) e in
-    EConstr.mkProd (x, t', red_to e' c' (n - 1))
-  | LetIn (x, b, t, c') when n > 0 ->
-    let t' = r e s t in let e' = EConstr.push_rel (RelDecl.LocalAssum (x, t')) e in
-    EConstr.mkLetIn (x, r e s b, t', red_to e' c' (n - 1))
+  | Prod (x, relevance, t, c') when n > 0 ->
+    let t' = r e s t in let e' = EConstr.push_rel (RelDecl.LocalAssum (x, relevance, t')) e in
+    EConstr.mkProd (x, relevance, t', red_to e' c' (n - 1))
+  | LetIn (x, relevance, b, t, c') when n > 0 ->
+    let t' = r e s t in let e' = EConstr.push_rel (RelDecl.LocalAssum (x, relevance, t')) e in
+    EConstr.mkLetIn (x, relevance, r e s b, t', red_to e' c' (n - 1))
   | _ -> r e s c in
   red_to e c0 (safe_depth s c0)
 
 let is_id_constr sigma c = match EConstr.kind sigma c with
-  | Lambda(_,_,c) when EConstr.isRel sigma c -> 1 = EConstr.destRel sigma c
+  | Lambda(_,_,_,c) when EConstr.isRel sigma c -> 1 = EConstr.destRel sigma c
   | _ -> false
 
 let red_product_skip_id env sigma c = match EConstr.kind sigma c with
@@ -487,8 +487,8 @@ let pf_abs_evars2 gl rigid (sigma, c0) =
     let evi = Evd.find sigma k in
     let dc = CList.firstn n (evar_filtered_context evi) in
     let abs_dc c = function
-    | NamedDecl.LocalDef (x,b,t) -> mkNamedLetIn x b t (mkArrow t c)
-    | NamedDecl.LocalAssum (x,t) -> mkNamedProd x t c in
+    | NamedDecl.LocalDef (x,r,b,t) -> mkNamedLetIn x r b t (mkArrow t r c)
+    | NamedDecl.LocalAssum (x,r,t) -> mkNamedProd x r t c in
     let t = Context.Named.fold_inside abs_dc ~init:evi.evar_concl dc in
     nf_evar sigma t in
   let rec put evlist c = match Constr.kind c with
@@ -510,7 +510,7 @@ let pf_abs_evars2 gl rigid (sigma, c0) =
   | _ -> Constr.map_with_binders ((+) 1) get i c in
   let rec loop c i = function
   | (_, (n, t)) :: evl ->
-    loop (mkLambda (mk_evar_name n, get (i - 1) t, c)) (i - 1) evl
+    loop (mkLambda (mk_evar_name n, Sorts.Relevant, get (i - 1) t, c)) (i - 1) evl
   | [] -> c in
   List.length evlist, EConstr.of_constr (loop (get 1 c0) 1 evlist), List.map fst evlist, ucst
 
@@ -547,8 +547,8 @@ let pf_abs_evars_pirrel gl (sigma, c0) =
     let evi = Evd.find sigma k in
     let dc = CList.firstn n (evar_filtered_context evi) in
     let abs_dc c = function
-    | NamedDecl.LocalDef (x,b,t) -> mkNamedLetIn x b t (mkArrow t c)
-    | NamedDecl.LocalAssum (x,t) -> mkNamedProd x t c in
+    | NamedDecl.LocalDef (x,r,b,t) -> mkNamedLetIn x r b t (mkArrow t r c)
+    | NamedDecl.LocalAssum (x,r,t) -> mkNamedProd x r t c in
     let t = Context.Named.fold_inside abs_dc ~init:evi.evar_concl dc in
     nf_evar sigma0 (nf_evar sigma t) in
   let rec put evlist c = match Constr.kind c with
@@ -603,7 +603,7 @@ let pf_abs_evars_pirrel gl (sigma, c0) =
   | (_, (n, t, _)) :: evl ->
     let t = get evlist (i - 1) t in
     let n = Name (Id.of_string (ssr_anon_hyp ^ string_of_int n)) in 
-    loopP evlist (mkProd (n, t, c)) (i - 1) evl
+    loopP evlist (mkProd (n, Sorts.Relevant, t, c)) (i - 1) evl
   | [] -> c in
   let rec loop c i = function
   | (_, (n, t, _)) :: evl ->
@@ -615,7 +615,7 @@ let pf_abs_evars_pirrel gl (sigma, c0) =
       List.map (fun (k,_) -> mkRel (fst (lookup k i evlist))) 
         (List.rev t_evplist) in
     let c = if extra_args = [] then c else app extra_args 1 c in
-    loop (mkLambda (mk_evar_name n, t, c)) (i - 1) evl
+    loop (mkLambda (mk_evar_name n, Sorts.Relevant, t, c)) (i - 1) evl
   | [] -> c in
   let res = loop (get evlist 1 c0) 1 evlist in
   pp(lazy(str"res= " ++ pr_constr res));
@@ -655,25 +655,25 @@ let pf_abs_cterm gl n c0 =
     mkApp (f, Array.init (Array.length a - dp.(0)) mkarg)
   | _ -> Constr.map_with_binders ((+) 1) strip i c in
   let rec strip_ndeps j i c = match Constr.kind c with
-  | Prod (x, t, c1) when i < j ->
+  | Prod (x, r, t, c1) when i < j ->
     let dl, c2 = strip_ndeps j (i + 1) c1 in
     if Vars.noccurn 1 c2 then dl, Vars.lift (-1) c2 else
-    i :: dl, mkProd (x, strip i t, c2)
-  | LetIn (x, b, t, c1) when i < j ->
-    let _, _, c1' = destProd c1 in
+    i :: dl, mkProd (x, r, strip i t, c2)
+  | LetIn (x, r, b, t, c1) when i < j ->
+    let _, _, _, c1' = destProd c1 in
     let dl, c2 = strip_ndeps j (i + 1) c1' in
     if Vars.noccurn 1 c2 then dl, Vars.lift (-1) c2 else
-    i :: dl, mkLetIn (x, strip i b, strip i t, c2)
+    i :: dl, mkLetIn (x, r, strip i b, strip i t, c2)
   | _ -> [], strip i c in
   let rec strip_evars i c = match Constr.kind c with
-    | Lambda (x, t1, c1) when i < n ->
+    | Lambda (x, r, t1, c1) when i < n ->
       let na = nb_evar_deps x in
       let dl, t2 = strip_ndeps (i + na) i t1 in
       let na' = List.length dl in
       eva.(i) <- Array.of_list (na - na' :: dl);
       let x' =
         if na' = 0 then Name (pf_type_id gl (EConstr.of_constr t2)) else mk_evar_name na' in
-      mkLambda (x', t2, strip_evars (i + 1) c1)
+      mkLambda (x', r, t2, strip_evars (i + 1) c1)
 (*      if noccurn 1 c2 then lift (-1) c2 else
       mkLambda (Name (pf_type_id gl t2), t2, c2) *)
     | _ -> strip i c in
@@ -697,8 +697,8 @@ let rec constr_name sigma c = match EConstr.kind sigma c with
 
 let pf_mkprod gl c ?(name=constr_name (project gl) c) cl =
   let gl, t = pfe_type_of gl c in
-  if name <> Anonymous || EConstr.Vars.noccurn (project gl) 1 cl then gl, EConstr.mkProd (name, t, cl) else
-  gl, EConstr.mkProd (Name (pf_type_id gl t), t, cl)
+  if name <> Anonymous || EConstr.Vars.noccurn (project gl) 1 cl then gl, EConstr.mkProd (name, Sorts.Relevant, t, cl) else
+  gl, EConstr.mkProd (Name (pf_type_id gl t), Sorts.Relevant, t, cl)
 
 let pf_abs_prod name gl c cl = pf_mkprod gl c ~name (Termops.subst_term (project gl) c cl)
 
@@ -744,12 +744,12 @@ let mkRefl t c gl =
 let discharge_hyp (id', (id, mode)) gl =
   let cl' = Vars.subst_var id (pf_concl gl) in
   match pf_get_hyp gl id, mode with
-  | NamedDecl.LocalAssum (_, t), _ | NamedDecl.LocalDef (_, _, t), "(" ->
-     Proofview.V82.of_tactic (Tactics.apply_type (EConstr.of_constr (mkProd (Name id', t, cl')))
+  | NamedDecl.LocalAssum (_, r, t), _ | NamedDecl.LocalDef (_, r, _, t), "(" ->
+     Proofview.V82.of_tactic (Tactics.apply_type (EConstr.of_constr (mkProd (Name id', r, t, cl')))
        [EConstr.of_constr (mkVar id)]) gl
-  | NamedDecl.LocalDef (_, v, t), _ ->
+  | NamedDecl.LocalDef (_, r, v, t), _ ->
      Proofview.V82.of_tactic
-       (convert_concl (EConstr.of_constr (mkLetIn (Name id', v, t, cl')))) gl
+       (convert_concl (EConstr.of_constr (mkLetIn (Name id', r, v, t, cl')))) gl
 
 (* wildcard names *)
 let clear_wilds wilds gl =
@@ -863,8 +863,8 @@ let pf_interp_ty ?(resolve_typeclasses=false) ist gl ty =
    let strip_cast (sigma, t) =
      let rec aux t = match EConstr.kind_of_type sigma t with
      | CastType (t, ty) when !n_binders = 0 && EConstr.isSort sigma ty -> t
-     | ProdType(n,s,t) -> decr n_binders; EConstr.mkProd (n, s, aux t)
-     | LetInType(n,v,ty,t) -> decr n_binders; EConstr.mkLetIn (n, v, ty, aux t)
+     | ProdType(n,r,s,t) -> decr n_binders; EConstr.mkProd (n, r, s, aux t)
+     | LetInType(n,r,v,ty,t) -> decr n_binders; EConstr.mkLetIn (n, r, v, ty, aux t)
      | _ -> anomaly "pf_interp_ty: ssr Type cast deleted by typecheck" in
      sigma, aux t in
    let sigma, cty as ty = strip_cast (interp_term ist gl ty) in
@@ -890,14 +890,14 @@ let saturate ?(beta=false) ?(bi_types=false) env sigma c ?(ty=Retyping.get_type_
      (if beta then Reductionops.whd_beta sigma else fun x -> x)
       (EConstr.mkApp (c, Array.of_list (List.map snd args))), ty, args, sigma 
   else match EConstr.kind_of_type sigma ty with
-  | ProdType (_, src, tgt) ->
+  | ProdType (_, _, src, tgt) ->
       let sigma = create_evar_defs sigma in
       let (sigma, x) =
         Evarutil.new_evar env sigma
           (if bi_types then Reductionops.nf_betaiota env sigma src else src) in
       loop (EConstr.Vars.subst1 x tgt) ((m - n,x) :: args) sigma (n-1)
   | CastType (t, _) -> loop t args sigma n 
-  | LetInType (_, v, _, t) -> loop (EConstr.Vars.subst1 v t) args sigma n
+  | LetInType (_, _, v, _, t) -> loop (EConstr.Vars.subst1 v t) args sigma n
   | SortType _ -> assert false
   | AtomicType _ ->
       let ty =  (* FIXME *)
@@ -952,7 +952,7 @@ let applyn ~with_evars ?beta ?(with_shelve=false) n t gl =
       let rec loop sigma bo args = function (* saturate with metas *)
         | 0 -> EConstr.mkApp (t, Array.of_list (List.rev args)), re_sig si sigma 
         | n -> match EConstr.kind sigma bo with
-          | Lambda (_, ty, bo) -> 
+          | Lambda (_, _, ty, bo) ->
               if not (EConstr.Vars.closed0 sigma ty) then
                 raise dependent_apply_error;
               let m = Evarutil.new_meta () in
@@ -969,7 +969,7 @@ let refine_with ?(first_goes_last=false) ?beta ?(with_evars=true) oc gl =
   let gl = pf_unsafe_merge_uc uct gl in
   let oc = if not first_goes_last || n <= 1 then oc else
     let l, c = decompose_lam oc in
-    if not (List.for_all_i (fun i (_,t) -> Vars.closedn ~-i t) (1-n) l) then oc else
+    if not (List.for_all_i (fun i (_,_,t) -> Vars.closedn ~-i t) (1-n) l) then oc else
     compose_lam (let xs,y = List.chop (n-1) l in y @ xs) 
       (mkApp (compose_lam l c, Array.of_list (mkRel 1 :: mkRels n)))
   in
@@ -1063,7 +1063,7 @@ let () = CLexer.set_keyword_state frozen_lexer ;;
 let rec fst_prod red tac = Proofview.Goal.nf_enter begin fun gl ->
   let concl = Proofview.Goal.concl (Proofview.Goal.assume gl) in
   match EConstr.kind (Proofview.Goal.sigma gl) concl with
-  | Prod (id,_,tgt) | LetIn(id,_,_,tgt) -> tac id
+  | Prod (id,_,_,tgt) | LetIn(id,_,_,_,tgt) -> tac id
   | _ -> if red then Tacticals.New.tclZEROMSG (str"No product even after head-reduction.")
          else Tacticals.New.tclTHEN Tactics.hnf_in_concl (fst_prod true tac)
 end
@@ -1169,14 +1169,14 @@ let pf_interp_gen_aux ist gl to_ind ((oclr, occ), t) =
 	errorstrm (str "@ can be used with variables only")
       else match Tacmach.pf_get_hyp gl (EConstr.destVar sigma c) with
       | NamedDecl.LocalAssum _ -> errorstrm (str "@ can be used with let-ins only")
-      | NamedDecl.LocalDef (name, b, ty) -> true, pat, EConstr.mkLetIn (Name name,b,ty,cl),c,clr,ucst,gl
+      | NamedDecl.LocalDef (name, r, b, ty) -> true, pat, EConstr.mkLetIn (Name name,r,b,ty,cl),c,clr,ucst,gl
     else let gl, ccl =  pf_mkprod gl c cl in false, pat, ccl, c, clr,ucst,gl
   else if to_ind && occ = None then
     let nv, p, _, ucst' = pf_abs_evars gl (fst pat, c) in
     let ucst = Evd.union_evar_universe_context ucst ucst' in
     if nv = 0 then anomaly "occur_existential but no evars" else
     let gl, pty = pfe_type_of gl p in
-    false, pat, EConstr.mkProd (constr_name (project gl) c, pty, Tacmach.pf_concl gl), p, clr,ucst,gl
+    false, pat, EConstr.mkProd (constr_name (project gl) c, Sorts.Relevant, pty, Tacmach.pf_concl gl), p, clr,ucst,gl
   else CErrors.user_err ?loc:(loc_of_cpattern t) (str "generalized term didn't match")
 
 let apply_type x xs = Proofview.V82.of_tactic (Tactics.apply_type x xs)
@@ -1264,7 +1264,7 @@ let abs_wgen keep_let ist f gen (gl,args,c) =
                      (EConstr.Vars.subst_var x c)
   | _, Some ((x, _), None) ->
      let x = hoi_id x in
-     gl, EConstr.mkVar x :: args, EConstr.mkProd (Name (f x),Tacmach.pf_get_hyp_typ gl x, EConstr.Vars.subst_var x c)
+     gl, EConstr.mkVar x :: args, EConstr.mkProd (Name (f x),Sorts.Relevant,Tacmach.pf_get_hyp_typ gl x, EConstr.Vars.subst_var x c)
   | _, Some ((x, "@"), Some p) -> 
      let x = hoi_id x in
      let cp = interp_cpattern ist gl p None in
@@ -1276,7 +1276,7 @@ let abs_wgen keep_let ist f gen (gl,args,c) =
      evar_closed t p;
      let ut = red_product_skip_id env sigma t in
      let gl, ty = pfe_type_of gl t in
-     pf_merge_uc ucst gl, args, EConstr.mkLetIn(Name (f x), ut, ty, c)
+     pf_merge_uc ucst gl, args, EConstr.mkLetIn(Name (f x),Sorts.Relevant, ut, ty, c)
   | _, Some ((x, _), Some p) ->
      let x = hoi_id x in
      let cp = interp_cpattern ist gl p None in
@@ -1287,7 +1287,7 @@ let abs_wgen keep_let ist f gen (gl,args,c) =
      let t = EConstr.of_constr t in
      evar_closed t p;
      let gl, ty = pfe_type_of gl t in
-     pf_merge_uc ucst gl, t :: args, EConstr.mkProd(Name (f x), ty, c)
+     pf_merge_uc ucst gl, t :: args, EConstr.mkProd(Name (f x), Sorts.Relevant, ty, c)
   | _ -> gl, args, c
 
 let clr_of_wgen gen clrs = match gen with

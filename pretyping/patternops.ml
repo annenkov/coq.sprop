@@ -78,8 +78,9 @@ and cofixpoint_eq (i1, r1) (i2, r2) =
   Int.equal i1 i2 &&
   rec_declaration_eq r1 r2
 
-and rec_declaration_eq (n1, c1, r1) (n2, c2, r2) =
+and rec_declaration_eq (n1, rs1, c1, r1) (n2, rs2, c2, r2) =
   Array.equal Name.equal n1 n2 &&
+  Array.equal Sorts.relevance_equal rs1 rs2 &&
   Array.equal Constr.equal c1 c2 &&
   Array.equal Constr.equal r1 r2
 
@@ -162,12 +163,12 @@ let pattern_of_constr env sigma t =
     | Sort Set -> PSort GSet
     | Sort (Type _) -> PSort (GType [])
     | Cast (c,_,_)      -> pattern_of_constr env c
-    | LetIn (na,c,t,b) -> PLetIn (na,pattern_of_constr env c,Some (pattern_of_constr env t),
-				  pattern_of_constr (push_rel (LocalDef (na,c,t)) env) b)
-    | Prod (na,c,b)   -> PProd (na,pattern_of_constr env c,
-				pattern_of_constr (push_rel (LocalAssum (na, c)) env) b)
-    | Lambda (na,c,b) -> PLambda (na,pattern_of_constr env c,
-				  pattern_of_constr (push_rel (LocalAssum (na, c)) env) b)
+    | LetIn (na,r,c,t,b) -> PLetIn (na,pattern_of_constr env c,Some (pattern_of_constr env t),
+                                  pattern_of_constr (push_rel (LocalDef (na,r,c,t)) env) b)
+    | Prod (na,r,c,b)   -> PProd (na,pattern_of_constr env c,
+                                pattern_of_constr (push_rel (LocalAssum (na, r, c)) env) b)
+    | Lambda (na,r,c,b) -> PLambda (na,pattern_of_constr env c,
+                                  pattern_of_constr (push_rel (LocalAssum (na, r, c)) env) b)
     | App (f,a) ->
         (match
           match kind f with

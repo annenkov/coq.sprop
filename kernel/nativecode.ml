@@ -1838,7 +1838,7 @@ and compile_rel env sigma univ auxdefs n =
   let decl = Pre_env.lookup_rel n env in
   let n = List.length env.env_rel_context.env_rel_ctx - n in
   match decl with
-  | LocalDef (_,t,_) ->
+  | LocalDef (_,_,t,_) ->
       let code = lambda_of_constr env sigma t in
       let auxdefs,code = compile_with_fv env sigma univ auxdefs None code in
       Glet(Grel n, code)::auxdefs
@@ -1848,7 +1848,7 @@ and compile_rel env sigma univ auxdefs n =
 and compile_named env sigma univ auxdefs id =
   let open Context.Named.Declaration in
   match lookup_named id env with
-  | LocalDef (_,t,_) ->
+  | LocalDef (_,_,t,_) ->
       let code = lambda_of_constr env sigma t in
       let auxdefs,code = compile_with_fv env sigma univ auxdefs None code in
       Glet(Gnamed id, code)::auxdefs
@@ -1911,7 +1911,8 @@ let compile_constant env sigma prefix ~interactive con cb =
       let prefix = get_mind_prefix env mind in
       let ci = { ci_ind = ind; ci_npar = mib.mind_nparams; 
 		 ci_cstr_nargs = [|0|];
-		 ci_cstr_ndecls = [||] (*FIXME*);
+                 ci_cstr_ndecls = [||] (*FIXME*);
+                 ci_relevance = Sorts.Relevant; (* TODO relevance *)
 		 ci_pp_info = { ind_tags = []; cstr_tags = [||] (*FIXME*); style = RegularStyle } } in
       let asw = { asw_ind = ind; asw_prefix = prefix; asw_ci = ci;
 		  asw_reloc = tbl; asw_finite = true } in

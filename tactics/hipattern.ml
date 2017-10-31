@@ -64,7 +64,7 @@ let is_non_recursive_type sigma t = op2bool (match_with_non_recursive_type sigma
 
 let rec has_nodep_prod_after n sigma c =
   match EConstr.kind sigma c with
-    | Prod (_,_,b) | LetIn (_,_,_,b) ->
+    | Prod (_,_,_,b) | LetIn (_,_,_,_,b) ->
 	( n>0 || Vars.noccurn sigma 1 b)
 	&& (has_nodep_prod_after (n-1) sigma b)
     | _            -> true
@@ -90,8 +90,8 @@ let prod_assum sigma t = fst (decompose_prod_assum sigma t)
 
 (* whd_beta normalize the types of arguments in a product *)
 let rec whd_beta_prod sigma c = match EConstr.kind sigma c with
-  | Prod (n,t,c) -> mkProd (n,Reductionops.whd_beta sigma t,whd_beta_prod sigma c)
-  | LetIn (n,d,t,c) -> mkLetIn (n,d,t,whd_beta_prod sigma c)
+  | Prod (n,r,t,c) -> mkProd (n,r,Reductionops.whd_beta sigma t,whd_beta_prod sigma c)
+  | LetIn (n,r,d,t,c) -> mkLetIn (n,r,d,t,whd_beta_prod sigma c)
   | _ -> c
 
 let match_with_one_constructor sigma style onlybinary allow_rec t =
@@ -167,7 +167,7 @@ let test_strict_disjunction n lc =
   let open Term in
   Array.for_all_i (fun i c ->
     match (prod_assum (snd (decompose_prod_n_assum n c))) with
-    | [LocalAssum (_,c)] -> Constr.isRel c && Int.equal (Constr.destRel c) (n - i)
+    | [LocalAssum (_,_,c)] -> Constr.isRel c && Int.equal (Constr.destRel c) (n - i)
     | _ -> false) 0 lc
 
 let match_with_disjunction ?(strict=false) ?(onlybinary=false) sigma t =
@@ -177,17 +177,19 @@ let match_with_disjunction ?(strict=false) ?(onlybinary=false) sigma t =
       let car = constructors_nrealargs ind in
       let (mib,mip) = Global.lookup_inductive ind in
       if Array.for_all (fun ar -> Int.equal ar 1) car
-	&& not (mis_is_recursive (ind,mib,mip))
-        && (Int.equal mip.mind_nrealargs 0)
+      && not (mis_is_recursive (ind,mib,mip))
+      && (Int.equal mip.mind_nrealargs 0)
       then
-	if strict then
-	  if test_strict_disjunction mib.mind_nparams mip.mind_nf_lc then
-	    Some (hdapp,args)
-	  else
-	    None
-	else
-	  let cargs =
-	    Array.map (fun ar -> pi2 (destProd sigma (prod_applist sigma (EConstr.of_constr ar) args)))
+        if strict then
+          if test_strict_disjunction mib.mind_nparams mip.mind_nf_lc then
+            Some (hdapp,args)
+          else
+            None
+        else
+          let cargs =
+            Array.map (fun ar ->
+                let (_,_,t,_) = destProd sigma (prod_applist sigma (EConstr.of_constr ar) args) in
+                t)
 	      mip.mind_nf_lc in
 	  Some (hdapp,Array.to_list cargs)
       else
@@ -348,7 +350,7 @@ let match_arrow_pattern env sigma t =
 
 let match_with_imp_term sigma c =
   match EConstr.kind sigma c with
-    | Prod (_,a,b) when Vars.noccurn sigma 1 b -> Some (a,b)
+    | Prod (_,_,a,b) when Vars.noccurn sigma 1 b -> Some (a,b)
     | _              -> None
 
 let is_imp_term sigma c = op2bool (match_with_imp_term sigma c)
@@ -365,7 +367,7 @@ let is_nottype env sigma t = op2bool (match_with_nottype env sigma t)
 
 let match_with_forall_term sigma c=
   match EConstr.kind sigma c with
-    | Prod (nam,a,b) -> Some (nam,a,b)
+    | Prod (nam,_,a,b) -> Some (nam,a,b)
     | _            -> None
 
 let is_forall_term sigma c = op2bool (match_with_forall_term sigma c)

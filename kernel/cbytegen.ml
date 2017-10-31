@@ -650,14 +650,14 @@ let rec compile_constr reloc c sz cont =
         comp_app compile_str_cst compile_get_univ reloc
 	  (Bstrconst (Const_type u)) (Array.of_list local_levels) sz cont
     end
-  | LetIn(_,xb,_,body) ->
+  | LetIn(_,_,xb,_,body) ->
       compile_constr reloc xb sz
 	(Kpush ::
 	(compile_constr (push_local sz reloc) body (sz+1) (add_pop 1 cont)))
-  | Prod(id,dom,codom) ->
+  | Prod(id,r,dom,codom) ->
       let cont1 =
 	Kpush :: compile_constr reloc dom (sz+1) (Kmakeprod :: cont) in
-      compile_constr reloc (mkLambda(id,dom,codom)) sz cont1
+      compile_constr reloc (mkLambda(id,r,dom,codom)) sz cont1
   | Lambda _ ->
       let params, body = Term.decompose_lam c in
       let arity = List.length params in
@@ -677,7 +677,7 @@ let rec compile_constr reloc c sz cont =
         | Const (kn,u) -> compile_const reloc kn u args sz cont
 	| _ -> comp_app compile_constr compile_constr reloc f args sz cont
       end
-  | Fix ((rec_args,init),(_,type_bodies,rec_bodies)) ->
+  | Fix ((rec_args,init),(_,_,type_bodies,rec_bodies)) ->
       let ndef = Array.length type_bodies in
       let rfv = ref empty_fv in
       let lbl_types = Array.make ndef Label.no in
@@ -709,7 +709,7 @@ let rec compile_constr reloc c sz cont =
       compile_fv reloc fv.fv_rev sz
 	(Kclosurerec(fv.size,init,lbl_types,lbl_bodies) :: cont)
 
-  | CoFix(init,(_,type_bodies,rec_bodies)) ->
+  | CoFix(init,(_,_,type_bodies,rec_bodies)) ->
       let ndef = Array.length type_bodies in
       let lbl_types = Array.make ndef Label.no in
       let lbl_bodies = Array.make ndef Label.no in

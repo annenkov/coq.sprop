@@ -56,7 +56,7 @@ let e_judge_of_apply env evdref funj argjv =
         uj_type = typ }
   | hj::restjl ->
       match EConstr.kind !evdref (whd_all env !evdref typ) with
-      | Prod (_,c1,c2) ->
+      | Prod (_,_,c1,c2) ->
 	 if Evarconv.e_cumul env evdref hj.uj_type c1 then
 	   apply_rec (n+1) (subst1 hj.uj_val c2) restjl
 	 else
@@ -64,7 +64,7 @@ let e_judge_of_apply env evdref funj argjv =
       | Evar ev ->
 	  let (evd',t) = Evardefine.define_evar_as_product !evdref ev in
           evdref := evd';
-          let (_,_,c2) = destProd evd' t in
+          let (_,_,_,c2) = destProd evd' t in
 	  apply_rec (n+1) (subst1 hj.uj_val c2) restjl
       | _ ->
 	  error_cant_apply_not_functional env !evdref funj argjv
@@ -90,16 +90,18 @@ let e_is_correct_arity env evdref c pj ind specif params =
   let rec srec env pt ar =
     let pt' = whd_all env !evdref pt in
     match EConstr.kind !evdref pt', ar with
-    | Prod (na1,a1,t), (LocalAssum (_,a1'))::ar' ->
+    | Prod (na1,r1,a1,t), (LocalAssum (_,_,a1'))::ar' ->
         if not (Evarconv.e_cumul env evdref a1 a1') then error ();
-        srec (push_rel (LocalAssum (na1,a1)) env) t ar'
+        srec (push_rel (LocalAssum (na1,r1,a1)) env) t ar'
     | Sort s, [] ->
         let s = ESorts.kind !evdref s in
         if not (Sorts.List.mem (Sorts.family s) allowed_sorts)
         then error ()
+        else s
     | Evar (ev,_), [] ->
         let evd, s = Evd.fresh_sort_in_family env !evdref (max_sort allowed_sorts) in
-        evdref := Evd.define ev (Constr.mkSort s) evd
+        evdref := Evd.define ev (Constr.mkSort s) evd;
+        s
     | _, (LocalDef _ as d)::ar' ->
         srec (push_rel d env) (lift 1 pt') ar'
     | _ ->
@@ -113,8 +115,8 @@ let lambda_applist_assum sigma n c l =
       if l == [] then substl subst t
       else anomaly (Pp.str "Not enough arguments.")
     else match EConstr.kind sigma t, l with
-    | Lambda(_,_,c), arg::l -> app (n-1) (arg::subst) c l
-    | LetIn(_,b,_,c), _ -> app (n-1) (substl subst b::subst) c l
+    | Lambda(_,_,_,c), arg::l -> app (n-1) (arg::subst) c l
+    | LetIn(_,_,b,_,c), _ -> app (n-1) (substl subst b::subst) c l
     | _ -> anomaly (Pp.str "Not enough lambda/let's.") in
   app n [] c l
 
@@ -124,20 +126,20 @@ let e_type_case_branches env evdref (ind,largs) pj c =
   let (params,realargs) = List.chop nparams largs in
   let p = pj.uj_val in
   let params = List.map EConstr.Unsafe.to_constr params in
-  let () = e_is_correct_arity env evdref c pj ind specif params in
+  let ps = e_is_correct_arity env evdref c pj ind specif params in
   let lc = build_branches_type ind specif params (EConstr.to_constr !evdref p) in
   let lc = Array.map EConstr.of_constr lc in
   let n = (snd specif).Declarations.mind_nrealdecls in
   let ty = whd_betaiota !evdref (lambda_applist_assum !evdref (n+1) p (realargs@[c])) in
-  (lc, ty)
+  (lc, ty, Sorts.relevance_of_sort ps)
 
 let e_judge_of_case env evdref ci pj cj lfj =
   let ((ind, u), spec) =
     try find_mrectype env !evdref cj.uj_type
     with Not_found -> error_case_not_inductive env !evdref cj in
   let indspec = ((ind, EInstance.kind !evdref u), spec) in
-  let _ = check_case_info env (fst indspec) ci in
-  let (bty,rslty) = e_type_case_branches env evdref indspec pj cj.uj_val in
+  let (bty,rslty,rci) = e_type_case_branches env evdref indspec pj cj.uj_val in
+  let () = check_case_info env (fst indspec) rci ci in
   e_check_branch_types env evdref (fst indspec) cj (lfj,bty);
   { uj_val  = mkCase (ci, pj.uj_val, cj.uj_val, Array.map j_val lfj);
     uj_type = rslty }
@@ -162,6 +164,8 @@ let check_allowed_sort env sigma ind c p =
     let s = inductive_sort_family (snd specif) in
     error_elim_arity env sigma ind sorts c pj
       (Some(ksort,s,Type_errors.error_elim_explain ksort s))
+  else
+    Sorts.relevance_of_sort_family ksort
 
 let e_judge_of_cast env evdref cj k tj =
   let expected_type = tj.utj_val in
@@ -178,13 +182,13 @@ let enrich_env env evdref =
 
 let check_fix env sigma pfix =
   let inj c = EConstr.to_constr sigma c in
-  let (idx, (ids, cs, ts)) = pfix in
-  check_fix env (idx, (ids, Array.map inj cs, Array.map inj ts))
+  let (idx, (ids, rs, cs, ts)) = pfix in
+  check_fix env (idx, (ids, rs, Array.map inj cs, Array.map inj ts))
 
 let check_cofix env sigma pcofix =
   let inj c = EConstr.to_constr sigma c in
-  let (idx, (ids, cs, ts)) = pcofix in
-  check_cofix env (idx, (ids, Array.map inj cs, Array.map inj ts))
+  let (idx, (ids, rs, cs, ts)) = pcofix in
+  check_cofix env (idx, (ids, rs, Array.map inj cs, Array.map inj ts))
 
 (* The typing machine with universes and existential variables. *)
 
@@ -224,16 +228,19 @@ let judge_of_projection env sigma p cj =
        uj_type = ty}
 
 let judge_of_abstraction env name var j =
-  { uj_val = mkLambda (name, var.utj_val, j.uj_val);
-    uj_type = mkProd (name, var.utj_val, j.uj_type) }
+  let r = Sorts.relevance_of_sort var.utj_type in
+  { uj_val = mkLambda (name, r, var.utj_val, j.uj_val);
+    uj_type = mkProd (name, r, var.utj_val, j.uj_type) }
 
 let judge_of_product env name t1 t2 =
+  let r = Sorts.relevance_of_sort t1.utj_type in
   let s = sort_of_product env t1.utj_type t2.utj_type in
-  { uj_val = mkProd (name, t1.utj_val, t2.utj_val);
+  { uj_val = mkProd (name, r, t1.utj_val, t2.utj_val);
     uj_type = mkSort s }
 
 let judge_of_letin env name defj typj j =
-  { uj_val = mkLetIn (name, defj.uj_val, typj.utj_val, j.uj_val) ;
+  let r = Sorts.relevance_of_sort typj.utj_type in
+  { uj_val = mkLetIn (name, r, defj.uj_val, typj.utj_val, j.uj_val) ;
     uj_type = subst1 defj.uj_val j.uj_type }
 
 (* cstr must be in n.f. w.r.t. evars and execute returns a judgement
@@ -275,13 +282,13 @@ let rec execute env evdref cstr =
         e_judge_of_case env evdref ci pj cj lfj
 
     | Fix ((vn,i as vni),recdef) ->
-        let (_,tys,_ as recdef') = execute_recdef env evdref recdef in
+        let (_,_,tys,_ as recdef') = execute_recdef env evdref recdef in
 	let fix = (vni,recdef') in
         check_fix env !evdref fix;
 	make_judge (mkFix fix) tys.(i)
 
     | CoFix (i,recdef) ->
-        let (_,tys,_ as recdef') = execute_recdef env evdref recdef in
+        let (_,_,tys,_ as recdef') = execute_recdef env evdref recdef in
         let cofix = (i,recdef') in
         check_cofix env !evdref cofix;
 	make_judge (mkCoFix cofix) tys.(i)
@@ -315,27 +322,30 @@ let rec execute env evdref cstr =
 	in
 	e_judge_of_apply env evdref j jl
 
-    | Lambda (name,c1,c2) ->
+    | Lambda (name,r,c1,c2) ->
         let j = execute env evdref c1 in
-	let var = e_type_judgment env evdref j in
-	let env1 = push_rel (LocalAssum (name, var.utj_val)) env in
+        let var = e_type_judgment env evdref j in
+        let () = check_relevance env var.utj_type r in
+        let env1 = push_rel (LocalAssum (name, r, var.utj_val)) env in
         let j' = execute env1 evdref c2 in
         judge_of_abstraction env1 name var j'
 
-    | Prod (name,c1,c2) ->
+    | Prod (name,r,c1,c2) ->
         let j = execute env evdref c1 in
         let varj = e_type_judgment env evdref j in
-	let env1 = push_rel (LocalAssum (name, varj.utj_val)) env in
+        let () = check_relevance env varj.utj_type r in
+        let env1 = push_rel (LocalAssum (name, r, varj.utj_val)) env in
         let j' = execute env1 evdref c2 in
         let varj' = e_type_judgment env1 evdref j' in
 	judge_of_product env name varj varj'
 
-     | LetIn (name,c1,c2,c3) ->
+     | LetIn (name,r,c1,c2,c3) ->
         let j1 = execute env evdref c1 in
         let j2 = execute env evdref c2 in
         let j2 = e_type_judgment env evdref j2 in
         let _ =  e_judge_of_cast env evdref j1 DEFAULTcast j2 in
-        let env1 = push_rel (LocalDef (name, j1.uj_val, j2.utj_val)) env in
+        let () = check_relevance env j2.utj_type r in
+        let env1 = push_rel (LocalDef (name, r, j1.uj_val, j2.utj_val)) env in
         let j3 = execute env1 evdref c3 in
         judge_of_letin env name j1 j2 j3
 
@@ -345,14 +355,14 @@ let rec execute env evdref cstr =
 	let tj = e_type_judgment env evdref tj in
         e_judge_of_cast env evdref cj k tj
 
-and execute_recdef env evdref (names,lar,vdef) =
+and execute_recdef env evdref (names,rs,lar,vdef) =
   let larj = execute_array env evdref lar in
   let lara = Array.map (e_assumption_of_judgment env evdref) larj in
-  let env1 = push_rec_types (names,lara,vdef) env in
+  let env1 = push_rec_types (names,rs,lara,vdef) env in
   let vdefj = execute_array env1 evdref vdef in
   let vdefv = Array.map j_val vdefj in
   let _ = check_type_fixpoint env1 evdref names lara vdefj in
-  (names,lara,vdefv)
+  (names,rs,lara,vdefv)
 
 and execute_array env evdref = Array.map (execute env evdref)
 

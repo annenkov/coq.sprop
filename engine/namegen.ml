@@ -97,12 +97,12 @@ let global_of_constr = function
 let head_name sigma c = (* Find the head constant of a constr if any *)
   let rec hdrec c =
     match EConstr.kind sigma c with
-    | Prod (_,_,c) | Lambda (_,_,c) | LetIn (_,_,_,c)
+    | Prod (_,_,_,c) | Lambda (_,_,_,c) | LetIn (_,_,_,_,c)
     | Cast (c,_,_) | App (c,_) -> hdrec c
     | Proj (kn,_) -> Some (Label.to_id (Constant.label (Projection.constant kn)))
     | Const _ | Ind _ | Construct _ | Var _ as c ->
 	Some (basename_of_global (global_of_constr c))
-    | Fix ((_,i),(lna,_,_)) | CoFix (i,(lna,_,_)) ->
+    | Fix ((_,i),(lna,_,_,_)) | CoFix (i,(lna,_,_,_)) ->
 	Some (match lna.(i) with Name id -> id | _ -> assert false)
     | Sort _ | Rel _ | Meta _|Evar _|Case (_, _, _, _) -> None
   in
@@ -130,7 +130,7 @@ let sort_hdchar = function
 let hdchar env sigma c =
   let rec hdrec k c =
     match EConstr.kind sigma c with
-    | Prod (_,_,c) | Lambda (_,_,c) | LetIn (_,_,_,c) -> hdrec (k+1) c
+    | Prod (_,_,_,c) | Lambda (_,_,_,c) | LetIn (_,_,_,_,c) -> hdrec (k+1) c
     | Cast (c,_,_) | App (c,_) -> hdrec k c
     | Proj (kn,_) -> lowercase_first_char (Label.to_id (Constant.label (Projection.constant kn)))
     | Const (kn,_) -> lowercase_first_char (Label.to_id (Constant.label kn))
@@ -142,10 +142,10 @@ let hdchar env sigma c =
 	(if n<=k then "p" (* the initial term is flexible product/function *)
 	 else
 	   try match lookup_rel (n-k) env with
-	     | LocalAssum (Name id,_)   | LocalDef (Name id,_,_) -> lowercase_first_char id
-	     | LocalAssum (Anonymous,t) | LocalDef (Anonymous,_,t) -> hdrec 0 (lift (n-k) t)
+             | LocalAssum (Name id,_,_)   | LocalDef (Name id,_,_,_) -> lowercase_first_char id
+             | LocalAssum (Anonymous,_,t) | LocalDef (Anonymous,_,_,t) -> hdrec 0 (lift (n-k) t)
 	   with Not_found -> "y")
-    | Fix ((_,i),(lna,_,_)) | CoFix (i,(lna,_,_)) ->
+    | Fix ((_,i),(lna,_,_,_)) | CoFix (i,(lna,_,_,_)) ->
 	let id = match lna.(i) with Name id -> id | _ -> assert false in
 	lowercase_first_char id
     | Evar _ (* We could do better... *)
@@ -161,18 +161,18 @@ let named_hd env sigma a = function
   | Anonymous -> Name (Id.of_string (hdchar env sigma a))
   | x         -> x
 
-let mkProd_name   env sigma (n,a,b) = mkProd (named_hd env sigma a n, a, b)
-let mkLambda_name env sigma (n,a,b) = mkLambda (named_hd env sigma a n, a, b)
+let mkProd_name   env sigma (n,r,a,b) = mkProd (named_hd env sigma a n, r, a, b)
+let mkLambda_name env sigma (n,r,a,b) = mkLambda (named_hd env sigma a n, r, a, b)
 
 let lambda_name = mkLambda_name
 let prod_name = mkProd_name
 
-let prod_create   env sigma (a,b) = mkProd (named_hd env sigma a Anonymous, a, b)
-let lambda_create env sigma (a,b) =  mkLambda (named_hd env sigma a Anonymous, a, b)
+let prod_create   env sigma (r,a,b) = mkProd (named_hd env sigma a Anonymous, r, a, b)
+let lambda_create env sigma (r,a,b) =  mkLambda (named_hd env sigma a Anonymous, r, a, b)
 
 let name_assumption env sigma = function
-    | LocalAssum (na,t) -> LocalAssum (named_hd env sigma t na, t)
-    | LocalDef (na,c,t) -> LocalDef (named_hd env sigma c na, c, t)
+    | LocalAssum (na,r,t) -> LocalAssum (named_hd env sigma t na, r, t)
+    | LocalDef (na,r,c,t) -> LocalDef (named_hd env sigma c na, r, c, t)
 
 let name_context env sigma hyps =
   snd
@@ -409,16 +409,16 @@ let compute_displayed_let_name_in sigma flags avoid na c =
 let rename_bound_vars_as_displayed sigma avoid env c =
   let rec rename avoid env c =
     match EConstr.kind sigma c with
-    | Prod (na,c1,c2)  ->
+    | Prod (na,r,c1,c2)  ->
 	let na',avoid' =
           compute_displayed_name_in sigma
             (RenamingElsewhereFor (env,c2)) avoid na c2 in
-	mkProd (na', c1, rename avoid' (na' :: env) c2)
-    | LetIn (na,c1,t,c2) ->
+        mkProd (na', r, c1, rename avoid' (na' :: env) c2)
+    | LetIn (na,r,c1,t,c2) ->
 	let na',avoid' =
           compute_displayed_let_name_in sigma
             (RenamingElsewhereFor (env,c2)) avoid na c2 in
-	mkLetIn (na',c1,t, rename avoid' (na' :: env) c2)
+        mkLetIn (na',r,c1,t, rename avoid' (na' :: env) c2)
     | Cast (c,k,t) -> mkCast (rename avoid env c, k,t)
     | _ -> c
   in

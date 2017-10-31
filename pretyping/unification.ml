@@ -100,22 +100,23 @@ let occur_meta_evd sigma mv c =
    gives [x1:A1]..[xn:An]c' such that c converts to ([x1:A1]..[xn:An]c' l) *)
 
 let abstract_scheme env evd c l lname_typ =
-  let mkLambda_name env (n,a,b) =
-    mkLambda (named_hd env evd a n, a, b)
+  let mkLambda_name env (n,r,a,b) =
+    mkLambda (named_hd env evd a n, r, a, b)
   in
   List.fold_left2
     (fun (t,evd) (locc,a) decl ->
        let na = RelDecl.get_name decl in
+       let ra = RelDecl.get_relevance decl in
        let ta = RelDecl.get_type decl in
        let na = match EConstr.kind evd a with Var id -> Name id | _ -> na in
 (* [occur_meta ta] test removed for support of eelim/ecase but consequences
    are unclear...
        if occur_meta ta then error "cannot find a type for the generalisation"
        else *) 
-       if occur_meta evd a then mkLambda_name env (na,ta,t), evd
+       if occur_meta evd a then mkLambda_name env (na,ra,ta,t), evd
        else
 	 let t', evd' = Find_subterm.subst_closed_term_occ env evd locc a t in
-	   mkLambda_name env (na,ta,t'), evd')
+           mkLambda_name env (na,ra,ta,t'), evd')
     (c,evd)
     (List.rev l)
     lname_typ
@@ -571,8 +572,8 @@ let is_rigid_head sigma flags t =
   | Ind (i,u) -> true
   | Construct _ -> true
   | Fix _ | CoFix _ -> true
-  | Rel _ | Var _ | Meta _ | Evar _ | Sort _ | Cast (_, _, _) | Prod (_, _, _)
-    | Lambda (_, _, _) | LetIn (_, _, _, _) | App (_, _) | Case (_, _, _, _)
+  | Rel _ | Var _ | Meta _ | Evar _ | Sort _ | Cast (_, _, _) | Prod _
+    | Lambda _ | LetIn _ | App (_, _) | Case (_, _, _, _)
     | Proj (_, _) -> false (* Why aren't Prod, Sort rigid heads ? *)
 
 let force_eqs c = 
@@ -655,7 +656,7 @@ let rec is_neutral env sigma ts t =
     | Case (_, p, c, cl) -> is_neutral env sigma ts c
     | Proj (p, c) -> is_neutral env sigma ts c
     | Lambda _ | LetIn _ | Construct _ | CoFix _ -> false
-    | Sort _ | Cast (_, _, _) | Prod (_, _, _) | Ind _ -> false (* Really? *)
+    | Sort _ | Cast (_, _, _) | Prod _ | Ind _ -> false (* Really? *)
     | Fix _ -> false (* This is an approximation *)
     | App _ -> assert false
 
@@ -781,14 +782,14 @@ let rec unify_0_with_initial_metas (sigma,ms,es as subst : subst0) conv_at_top e
 	     with e when CErrors.noncritical e ->
                error_cannot_unify curenv sigma (m,n))
 
-	| Lambda (na,t1,c1), Lambda (_,t2,c2) ->
-	    unirec_rec (push (na,t1) curenvnb) CONV {opt with at_top = true}
+        | Lambda (na,r1,t1,c1), Lambda (_,_,t2,c2) ->
+            unirec_rec (push (na,r1,t1) curenvnb) CONV {opt with at_top = true}
 	      (unirec_rec curenvnb CONV {opt with at_top = true; with_types = false} substn t1 t2) c1 c2
-	| Prod (na,t1,c1), Prod (_,t2,c2) ->
-	    unirec_rec (push (na,t1) curenvnb) pb {opt with at_top = true}
+        | Prod (na,r1,t1,c1), Prod (_,_,t2,c2) ->
+            unirec_rec (push (na,r1,t1) curenvnb) pb {opt with at_top = true}
 	      (unirec_rec curenvnb CONV {opt with at_top = true; with_types = false} substn t1 t2) c1 c2
-	| LetIn (_,a,_,c), _ -> unirec_rec curenvnb pb opt substn (subst1 a c) cN
-	| _, LetIn (_,a,_,c) -> unirec_rec curenvnb pb opt substn cM (subst1 a c)
+        | LetIn (_,_,a,_,c), _ -> unirec_rec curenvnb pb opt substn (subst1 a c) cN
+        | _, LetIn (_,_,a,_,c) -> unirec_rec curenvnb pb opt substn cM (subst1 a c)
 
 	(** Fast path for projections. *)
 	| Proj (p1,c1), Proj (p2,c2) when Constant.equal
@@ -799,11 +800,11 @@ let rec unify_0_with_initial_metas (sigma,ms,es as subst : subst0) conv_at_top e
 	     unify_not_same_head curenvnb pb opt substn cM cN)
 
         (* eta-expansion *)
-	| Lambda (na,t1,c1), _ when flags.modulo_eta ->
-	    unirec_rec (push (na,t1) curenvnb) CONV {opt with at_top = true} substn
+        | Lambda (na,r1,t1,c1), _ when flags.modulo_eta ->
+            unirec_rec (push (na,r1,t1) curenvnb) CONV {opt with at_top = true} substn
 	      c1 (mkApp (lift 1 cN,[|mkRel 1|]))
-	| _, Lambda (na,t2,c2) when flags.modulo_eta ->
-	    unirec_rec (push (na,t2) curenvnb) CONV {opt with at_top = true} substn
+        | _, Lambda (na,r2,t2,c2) when flags.modulo_eta ->
+            unirec_rec (push (na,r2,t2) curenvnb) CONV {opt with at_top = true} substn
 	      (mkApp (lift 1 cM,[|mkRel 1|])) c2
 
 	(* For records *)
@@ -1129,19 +1130,19 @@ let right = false
 let rec unify_with_eta keptside flags env sigma c1 c2 =
 (* Question: try whd_all on ci if not two lambdas? *)
   match EConstr.kind sigma c1, EConstr.kind sigma c2 with
-  | (Lambda (na,t1,c1'), Lambda (_,t2,c2')) ->
-    let env' = push_rel_assum (na,t1) env in
+  | (Lambda (na,r1,t1,c1'), Lambda (_,_,t2,c2')) ->
+    let env' = push_rel_assum (na,r1,t1) env in
     let sigma,metas,evars = unify_0 env sigma CONV flags t1 t2 in
     let side,(sigma,metas',evars') =
       unify_with_eta keptside flags env' sigma c1' c2'
     in (side,(sigma,metas@metas',evars@evars'))
-  | (Lambda (na,t,c1'),_)->
-    let env' = push_rel_assum (na,t) env in
+  | (Lambda (na,r,t,c1'),_)->
+    let env' = push_rel_assum (na,r,t) env in
     let side = left in (* expansion on the right: we keep the left side *)
       unify_with_eta side flags env' sigma
       c1' (mkApp (lift 1 c2,[|mkRel 1|]))
-  | (_,Lambda (na,t,c2')) ->
-    let env' = push_rel_assum (na,t) env in
+  | (_,Lambda (na,r,t,c2')) ->
+    let env' = push_rel_assum (na,r,t) env in
     let side = right in (* expansion on the left: we keep the right side *)
       unify_with_eta side flags env' sigma
       (mkApp (lift 1 c1,[|mkRel 1|])) c2'
@@ -1237,7 +1238,7 @@ let applyHead env evd n c  =
       (evd, c)
     else
       match EConstr.kind evd (whd_all env evd cty) with
-      | Prod (_,c1,c2) ->
+      | Prod (_,_,c1,c2) ->
         let (evd',evar) =
       Evarutil.new_evar env evd ~src:(Loc.tag Evar_kinds.GoalEvar) c1 in
       apprec (n-1) (mkApp(c,[|evar|])) (subst1 evar c2) evd'
@@ -1759,7 +1760,7 @@ let w_unify_to_subterm env evd ?(flags=default_unify_flags ()) (op,cl) =
 		 matchrec c
 	       with ex when precatchable_exception ex ->
 		 iter_fail matchrec lf)
-	  | LetIn(_,c1,_,c2) ->
+          | LetIn(_,_,c1,_,c2) ->
 	       (try
 		 matchrec c1
 	       with ex when precatchable_exception ex ->
@@ -1767,25 +1768,25 @@ let w_unify_to_subterm env evd ?(flags=default_unify_flags ()) (op,cl) =
 
 	  | Proj (p,c) -> matchrec c
 
-	  | Fix(_,(_,types,terms)) ->
+          | Fix(_,(_,_,types,terms)) ->
 	       (try
 		 iter_fail matchrec types
 	       with ex when precatchable_exception ex ->
 		 iter_fail matchrec terms)
 
-	  | CoFix(_,(_,types,terms)) ->
+          | CoFix(_,(_,_,types,terms)) ->
 	       (try
 		 iter_fail matchrec types
 	       with ex when precatchable_exception ex ->
 		 iter_fail matchrec terms)
 
-          | Prod (_,t,c) ->
+          | Prod (_,_,t,c) ->
 	      (try
 		 matchrec t
 	       with ex when precatchable_exception ex ->
 		 matchrec c)
 
-          | Lambda (_,t,c) ->
+          | Lambda (_,_,t,c) ->
 	      (try
 		 matchrec t
 	       with ex when precatchable_exception ex ->
@@ -1844,19 +1845,19 @@ let w_unify_to_subterm_all env evd ?(flags=default_unify_flags ()) (op,cl) =
 
 	    | Proj (p,c) -> matchrec c
 
-	    | LetIn(_,c1,_,c2) ->
+            | LetIn(_,_,c1,_,c2) ->
 		bind (matchrec c1) (matchrec c2)
 
-	    | Fix(_,(_,types,terms)) ->
+            | Fix(_,(_,_,types,terms)) ->
 		bind (bind_iter matchrec types) (bind_iter matchrec terms)
 
-	    | CoFix(_,(_,types,terms)) ->
+            | CoFix(_,(_,_,types,terms)) ->
 		bind (bind_iter matchrec types) (bind_iter matchrec terms)
 
-            | Prod (_,t,c) ->
+            | Prod (_,_,t,c) ->
 		bind (matchrec t) (matchrec c)
 
-            | Lambda (_,t,c) ->
+            | Lambda (_,_,t,c) ->
 		bind (matchrec t) (matchrec c)
 
           | Cast (_, _, _)  -> fail "Match_subterm" (* Is this expected? *)

@@ -156,10 +156,10 @@ let print_mutual_inductive env mind mib udecl =
 let get_fields =
   let rec prodec_rec l subst c =
     match kind c with
-    | Prod (na,t,c) ->
+    | Prod (na,_,t,c) ->
         let id = match na with Name id -> id | Anonymous -> Id.of_string "_" in
         prodec_rec ((id,true,Vars.substl subst t)::l) (mkVar id::subst) c
-    | LetIn (na,b,_,c) ->
+    | LetIn (na,_,b,_,c) ->
         let id = match na with Name id -> id | Anonymous -> Id.of_string "_" in
         prodec_rec ((id,false,Vars.substl subst b)::l) (mkVar id::subst) c
     | _               -> List.rev l

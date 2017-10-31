@@ -67,18 +67,18 @@ let map_named_declaration_with_hyploc f hyploc acc decl =
     acc, typ
   in
   match decl,hyploc with
-  | LocalAssum (id,_), InHypValueOnly ->
+  | LocalAssum (id,_,_), InHypValueOnly ->
       error_occurrences_error (IncorrectInValueOccurrence id)
-  | LocalAssum (id,typ), _ ->
-      let acc,typ = f acc typ in acc, LocalAssum (id,typ)
-  | LocalDef (id,body,typ), InHypTypeOnly ->
-      let acc,typ = f acc typ in acc, LocalDef (id,body,typ)
-  | LocalDef (id,body,typ), InHypValueOnly ->
-      let acc,body = f acc body in acc, LocalDef (id,body,typ)
-  | LocalDef (id,body,typ), InHyp ->
+  | LocalAssum (id,r,typ), _ ->
+      let acc,typ = f acc typ in acc, LocalAssum (id,r,typ)
+  | LocalDef (id,r,body,typ), InHypTypeOnly ->
+      let acc,typ = f acc typ in acc, LocalDef (id,r,body,typ)
+  | LocalDef (id,r,body,typ), InHypValueOnly ->
+      let acc,body = f acc body in acc, LocalDef (id,r,body,typ)
+  | LocalDef (id,r,body,typ), InHyp ->
       let acc,body = f acc body in
       let acc,typ = f acc typ in
-      acc, LocalDef (id,body,typ)
+      acc, LocalDef (id,r,body,typ)
 
 (** Finding a subterm up to some testing function *)
 

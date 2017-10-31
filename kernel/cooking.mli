@@ -21,6 +21,7 @@ type result = {
   cook_type : types;
   cook_proj : projection_body option;
   cook_universes : constant_universes;
+  cook_relevance : Sorts.relevance;
   cook_inline : inline;
   cook_context : Context.Named.t option;
 }

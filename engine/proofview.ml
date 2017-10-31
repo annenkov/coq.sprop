@@ -835,10 +835,10 @@ module Progress = struct
     let c1 = named_context_of_val ctx1 and c2 = named_context_of_val ctx2 in
     let eq_named_declaration d1 d2 =
       match d1, d2 with
-      | LocalAssum (i1,t1), LocalAssum (i2,t2) ->
-         Names.Id.equal i1 i2 && eq_constr sigma1 sigma2 t1 t2
-      | LocalDef (i1,c1,t1), LocalDef (i2,c2,t2) ->
-         Names.Id.equal i1 i2 && eq_constr sigma1 sigma2 c1 c2
+      | LocalAssum (i1,r1,t1), LocalAssum (i2,r2,t2) ->
+         Names.Id.equal i1 i2 && Sorts.relevance_equal r1 r2 && eq_constr sigma1 sigma2 t1 t2
+      | LocalDef (i1,r1,c1,t1), LocalDef (i2,r2,c2,t2) ->
+         Names.Id.equal i1 i2 && Sorts.relevance_equal r1 r2 && eq_constr sigma1 sigma2 c1 c2
          && eq_constr sigma1 sigma2 t1 t2
       | _ ->
          false

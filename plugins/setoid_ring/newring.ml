@@ -260,7 +260,7 @@ let dest_rel0 sigma t =
 
 let rec dest_rel sigma t =
   match EConstr.kind sigma t with
-  | Prod(_,_,c) -> dest_rel sigma c
+  | Prod(_,_,_,c) -> dest_rel sigma c
   | _ -> dest_rel0 sigma t
 
 (****************************************************************************)

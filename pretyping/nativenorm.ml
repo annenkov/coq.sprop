@@ -87,9 +87,9 @@ let invert_tag cst tag reloc_tbl =
   with Find_at j -> (j+1)
 
 let decompose_prod env t =
-  let (name,dom,codom as res) = destProd (whd_all env t) in
+  let (name,r,dom,codom as res) = destProd (whd_all env t) in
   match name with
-  | Anonymous -> (Name (Id.of_string "x"),dom,codom)
+  | Anonymous -> (Name (Id.of_string "x"),r,dom,codom)
   | _ -> res
 
 let app_type env c =
@@ -149,7 +149,7 @@ let build_branches_type env sigma (mind,_ as _ind) mib mip u params dep p =
   let build_one_branch i cty =
     let typi = type_constructor mind mib u cty params in
     let decl,indapp = Reductionops.splay_prod env sigma (EConstr.of_constr typi) in
-    let decl = List.map (on_snd EConstr.Unsafe.to_constr) decl in
+    let decl = List.map (on_pi3 EConstr.Unsafe.to_constr) decl in
     let indapp = EConstr.Unsafe.to_constr indapp in
     let decl_with_letin,_ = decompose_prod_assum typi in
     let ind,cargs = find_rectype_a env indapp in
@@ -191,15 +191,15 @@ let rec nf_val env sigma v typ =
   | Vaccu accu -> nf_accu env sigma accu
   | Vfun f -> 
       let lvl = nb_rel env in
-      let name,dom,codom = 
+      let name,r,dom,codom =
 	try decompose_prod env typ
 	with DestKO ->
           CErrors.anomaly
             (Pp.strbrk "Returned a functional value in a type not recognized as a product type.")
       in
-      let env = push_rel (LocalAssum (name,dom)) env in
+      let env = push_rel (LocalAssum (name,r,dom)) env in
       let body = nf_val env sigma (f (mk_rel_accu lvl)) codom in
-      mkLambda(name,dom,body)
+      mkLambda(name,r,dom,body)
   | Vconst n -> construct_of_constr_const env n typ
   | Vblock b ->
       let capp,ctyp = construct_of_constr_block env (block_tag b) typ in
@@ -237,7 +237,7 @@ and nf_accu_type env sigma accu =
 
 and nf_args env sigma args t =
   let aux arg (t,l) = 
-    let _,dom,codom =
+    let _,_,dom,codom =
       try decompose_prod env t with
 	DestKO ->
 	CErrors.anomaly
@@ -254,7 +254,7 @@ and nf_bargs env sigma b t =
   let len = block_size b in
   Array.init len
     (fun i ->
-      let _,dom,codom =
+      let _,_,dom,codom =
 	try decompose_prod env !t with
 	  DestKO ->
 	  CErrors.anomaly
@@ -271,11 +271,12 @@ and nf_atom env sigma atom =
   | Asort s -> mkSort s
   | Avar id -> mkVar id
   | Aprod(n,dom,codom) ->
-      let dom = nf_type env sigma dom in
-      let vn = mk_rel_accu (nb_rel env) in
-      let env = push_rel (LocalAssum (n,dom)) env in
-      let codom = nf_type env sigma (codom vn) in
-      mkProd(n,dom,codom)
+    let dom, sdom = nf_type_sort env sigma dom in
+    let rdom = Sorts.relevance_of_sort sdom in
+    let vn = mk_rel_accu (nb_rel env) in
+    let env = push_rel (LocalAssum (n,rdom,dom)) env in
+    let codom = nf_type env sigma (codom vn) in
+    mkProd(n,rdom,dom,codom)
   | Ameta (mv,_) -> mkMeta mv
   | Aproj(p,c) ->
       let c = nf_accu env sigma c in
@@ -320,32 +321,37 @@ and nf_atom_type env sigma atom =
       let ci = ans.asw_ci in
       mkCase(ci, p, a, branchs), tcase 
   | Afix(tt,ft,rp,s) ->
-      let tt = Array.map (fun t -> nf_type env sigma t) tt in
+      let tt = Array.map (fun t -> nf_type_sort env sigma t) tt in
+      let tt = Array.map fst tt and rt = Array.map snd tt in
       let name = Array.map (fun _ -> (Name (Id.of_string "Ffix"))) tt in
       let lvl = nb_rel env in
+      let rt = Array.map (Sorts.relevance_of_sort) rt in
       let nbfix = Array.length ft in
       let fargs = mk_rels_accu lvl (Array.length ft) in
-      (* Third argument of the tuple is ignored by push_rec_types *)
-      let env = push_rec_types (name,tt,[||]) env in
+      (* Body argument of the tuple is ignored by push_rec_types *)
+      let env = push_rec_types (name,rt,tt,[||]) env in
       (* We lift here because the types of arguments (in tt) will be evaluated
          in an environment where the fixpoints have been pushed *)
       let norm_body i v = nf_val env sigma (napply v fargs) (lift nbfix tt.(i)) in
       let ft = Array.mapi norm_body ft in
-      mkFix((rp,s),(name,tt,ft)), tt.(s)
+      mkFix((rp,s),(name,rt,tt,ft)), tt.(s)
   | Acofix(tt,ft,s,_) | Acofixe(tt,ft,s,_) ->
-      let tt = Array.map (nf_type env sigma) tt in
+      let tt = Array.map (fun t -> nf_type_sort env sigma t) tt in
+      let tt = Array.map fst tt and rt = Array.map snd tt in
       let name = Array.map (fun _ -> (Name (Id.of_string "Fcofix"))) tt in
       let lvl = nb_rel env in
+      let rt = Array.map (Sorts.relevance_of_sort) rt in
       let fargs = mk_rels_accu lvl (Array.length ft) in
-      let env = push_rec_types (name,tt,[||]) env in
+      let env = push_rec_types (name,rt,tt,[||]) env in
       let ft = Array.mapi (fun i v -> nf_val env sigma (napply v fargs) tt.(i)) ft in
-      mkCoFix(s,(name,tt,ft)), tt.(s)
+      mkCoFix(s,(name,rt,tt,ft)), tt.(s)
   | Aprod(n,dom,codom) ->
       let dom,s1 = nf_type_sort env sigma dom in
+      let r1 = Sorts.relevance_of_sort s1 in
       let vn = mk_rel_accu (nb_rel env) in
-      let env = push_rel (LocalAssum (n,dom)) env in
+      let env = push_rel (LocalAssum (n,r1,dom)) env in
       let codom,s2 = nf_type_sort env sigma (codom vn) in
-      mkProd(n,dom,codom), Typeops.type_of_product env n s1 s2
+      mkProd(n,r1,dom,codom), Typeops.type_of_product env n s1 s2
   | Aevar(evk,ty,args) ->
     let ty = nf_type env sigma ty in
     nf_evar env sigma evk ty args
@@ -364,15 +370,15 @@ and  nf_predicate env sigma ind mip params v pT =
   | Vfun f, Prod _ ->
       let k = nb_rel env in
       let vb = f (mk_rel_accu k) in
-      let name,dom,codom =
+      let name,r,dom,codom =
 	try decompose_prod env pT with
 	  DestKO ->
 	  CErrors.anomaly
 	    (Pp.strbrk "Returned a functional value in a type not recognized as a product type.")
       in
       let dep,body = 
-	nf_predicate (push_rel (LocalAssum (name,dom)) env) sigma ind mip params vb codom in
-      dep, mkLambda(name,dom,body)
+        nf_predicate (push_rel (LocalAssum (name,r,dom)) env) sigma ind mip params vb codom in
+      dep, mkLambda(name,r,dom,body)
   | Vfun f, _ -> 
       let k = nb_rel env in
       let vb = f (mk_rel_accu k) in
@@ -381,8 +387,9 @@ and  nf_predicate env sigma ind mip params v pT =
       let rargs = Array.init n (fun i -> mkRel (n-i)) in
       let params = if Int.equal n 0 then params else Array.map (lift n) params in
       let dom = mkApp(mkIndU ind,Array.append params rargs) in
-      let body = nf_type (push_rel (LocalAssum (name,dom)) env) sigma vb in
-      true, mkLambda(name,dom,body)
+      let r = Inductive.relevance_of_inductive env (fst ind) in
+      let body = nf_type (push_rel (LocalAssum (name,r,dom)) env) sigma vb in
+      true, mkLambda(name,r,dom,body)
   | _, _ -> false, nf_type env sigma v
 
 and nf_evar env sigma evk ty args =

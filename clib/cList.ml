@@ -80,6 +80,7 @@ sig
   val goto : int -> 'a list -> 'a list * 'a list
   val split_when : ('a -> bool) -> 'a list -> 'a list * 'a list
   val split3 : ('a * 'b * 'c) list -> 'a list * 'b list * 'c list
+  val split4 : ('a * 'b * 'c * 'd) list -> 'a list * 'b list * 'c list * 'd list
   val firstn : int -> 'a list -> 'a list
   val last : 'a list -> 'a
   val lastn : int -> 'a list -> 'a list
@@ -714,6 +715,11 @@ let rec split3 = function
   | [] -> ([], [], [])
   | (x,y,z)::l ->
       let (rx, ry, rz) = split3 l in (x::rx, y::ry, z::rz)
+
+let rec split4 = function
+  | [] -> ([], [], [], [])
+  | (a,b,c,d)::l ->
+      let (ra, rb, rc, rd) = split4 l in (a::ra, b::rb, c::rc, d::rd)
 
 let firstn n l =
   let rec aux acc n l =

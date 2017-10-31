@@ -156,6 +156,7 @@ type result = {
   cook_type : types;
   cook_proj : projection_body option;
   cook_universes : constant_universes;
+  cook_relevance : Sorts.relevance;
   cook_inline : inline;
   cook_context : Context.Named.t option;
 }
@@ -240,7 +241,7 @@ let cook_constant ~hcons env { from = cb; info } =
     in 
     let ctx, ty' = decompose_prod_n (n' + pb.proj_npars + 1) typ in
       { proj_ind = mind; proj_npars = pb.proj_npars + n'; proj_arg = pb.proj_arg;
-	proj_eta = etab, etat;
+        proj_eta = etab, etat; proj_relevance = pb.proj_relevance;
 	proj_type = ty'; proj_body = c' }
   in
   {
@@ -248,6 +249,7 @@ let cook_constant ~hcons env { from = cb; info } =
     cook_type = typ;
     cook_proj = Option.map projection cb.const_proj;
     cook_universes = univs;
+    cook_relevance = cb.const_relevance;
     cook_inline = cb.const_inline_code;
     cook_context = Some const_hyps;
   }

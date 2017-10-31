@@ -151,7 +151,7 @@ let is_class_constr sigma c =
 let rec is_class_type evd c =
   let c, _ = Termops.decompose_app_vect evd c in
     match EConstr.kind evd c with
-    | Prod (_, _, t) -> is_class_type evd t
+    | Prod (_, _, _, t) -> is_class_type evd t
     | Cast (t, _, _) -> is_class_type evd t
     | _ -> is_class_constr evd c
       

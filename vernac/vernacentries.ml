@@ -122,7 +122,7 @@ let make_cases_aux glob_ref =
 	     let al = Util.List.skipn np al in
 	     let rec rename avoid = function
 	       | [] -> []
-	       | (n,_)::l ->
+               | (n,_,_)::l ->
 		   let n' = Namegen.next_name_away_with_default (Id.to_string Namegen.default_dependent_ident) n avoid in
 		   Id.to_string n' :: rename (Id.Set.add n' avoid) l in
 	     let al' = rename Id.Set.empty al in
@@ -1654,7 +1654,7 @@ let print_about_hyp_globs ?loc ref_or_by_not udecl glopt =
     let decl = Context.Named.lookup id hyps in
     let natureofid = match decl with
                      | LocalAssum _ -> "Hypothesis"
-                     | LocalDef (_,bdy,_) ->"Constant (let in)" in
+                     | LocalDef (_,_,bdy,_) ->"Constant (let in)" in
     let sigma, env = Pfedit.get_current_context () in
     v 0 (Id.print id ++ str":" ++ pr_econstr_env env sigma (NamedDecl.get_type decl) ++ fnl() ++ fnl()
 	 ++ str natureofid ++ str " of the goal context.")

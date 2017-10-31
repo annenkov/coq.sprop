@@ -274,7 +274,7 @@ let info_env info = info.i_cache.i_env
 open Context.Named.Declaration
 
 let assoc_defined id env = match Environ.lookup_named id env with
-| LocalDef (_, c, _) -> c
+| LocalDef (_, _, c, _) -> c
 | _ -> raise Not_found
 
 let ref_value_cache ({i_cache = cache} as infos)  ref =
@@ -293,7 +293,7 @@ let ref_value_cache ({i_cache = cache} as infos)  ref =
           in
           begin match d with
           | LocalAssum _ -> raise Not_found
-          | LocalDef (_, t, _) -> lift n t
+          | LocalDef (_, _, t, _) -> lift n t
           end
 	| VarKey id -> assoc_defined id cache.i_env
 	| ConstKey cst -> constant_value_in cache.i_env cst
@@ -364,9 +364,9 @@ and fterm =
   | FFix of fixpoint * fconstr subs
   | FCoFix of cofixpoint * fconstr subs
   | FCaseT of case_info * constr * fconstr * constr array * fconstr subs (* predicate and branches are closures *)
-  | FLambda of int * (Name.t * constr) list * constr * fconstr subs
-  | FProd of Name.t * fconstr * fconstr
-  | FLetIn of Name.t * fconstr * fconstr * constr * fconstr subs
+  | FLambda of int * (Name.t * Sorts.relevance * constr) list * constr * fconstr subs
+  | FProd of Name.t * Sorts.relevance * fconstr * fconstr
+  | FLetIn of Name.t * Sorts.relevance * fconstr * fconstr * constr * fconstr subs
   | FEvar of existential * fconstr subs
   | FLIFT of int * fconstr
   | FCLOS of constr * fconstr subs
@@ -515,9 +515,9 @@ let mk_lambda env t =
 
 let destFLambda clos_fun t =
   match t.term with
-      FLambda(_,[(na,ty)],b,e) -> (na,clos_fun e ty,clos_fun (subs_lift e) b)
-    | FLambda(n,(na,ty)::tys,b,e) ->
-        (na,clos_fun e ty,{norm=Cstr;term=FLambda(n-1,tys,b,subs_lift e)})
+      FLambda(_,[(na,r,ty)],b,e) -> (na,r,clos_fun e ty,clos_fun (subs_lift e) b)
+    | FLambda(n,(na,r,ty)::tys,b,e) ->
+        (na,r,clos_fun e ty,{norm=Cstr;term=FLambda(n-1,tys,b,subs_lift e)})
     | _ -> assert false
 	(* t must be a FLambda and binding list cannot be empty *)
 
@@ -571,12 +571,12 @@ let mk_clos_deep clos_fun env t =
         { norm = Cstr; term = FCoFix(cfx,env) }
     | Lambda _ ->
         { norm = Cstr; term = mk_lambda env t }
-    | Prod (n,t,c)   ->
+    | Prod (n,r,t,c)   ->
         { norm = Whnf;
-	  term = FProd (n, clos_fun env t, clos_fun (subs_lift env) c) }
-    | LetIn (n,b,t,c) ->
+          term = FProd (n, r, clos_fun env t, clos_fun (subs_lift env) c) }
+    | LetIn (n,r,b,t,c) ->
         { norm = Red;
-	  term = FLetIn (n, clos_fun env b, clos_fun env t, c, env) }
+          term = FLetIn (n, r, clos_fun env b, clos_fun env t, c, env) }
     | Evar ev ->
 	{ norm = Red; term = FEvar(ev,env) }
 
@@ -598,21 +598,21 @@ let rec to_constr constr_fun lfts v =
     | FCaseT (ci,p,c,ve,env) ->
 	mkCase (ci, constr_fun lfts (mk_clos env p),
                 constr_fun lfts c,
-		Array.map (fun b -> constr_fun lfts (mk_clos env b)) ve)
-    | FFix ((op,(lna,tys,bds)),e) ->
+                Array.map (fun b -> constr_fun lfts (mk_clos env b)) ve)
+    | FFix ((op,(lna,r,tys,bds)),e) ->
         let n = Array.length bds in
         let ftys = CArray.Fun1.map mk_clos e tys in
         let fbds = CArray.Fun1.map mk_clos (subs_liftn n e) bds in
-	let lfts' = el_liftn n lfts in
-	mkFix (op, (lna, CArray.Fun1.map constr_fun lfts ftys,
-		         CArray.Fun1.map constr_fun lfts' fbds))
-    | FCoFix ((op,(lna,tys,bds)),e) ->
+        let lfts' = el_liftn n lfts in
+        mkFix (op, (lna, r, CArray.Fun1.map constr_fun lfts ftys,
+                    CArray.Fun1.map constr_fun lfts' fbds))
+    | FCoFix ((op,(lna,r,tys,bds)),e) ->
         let n = Array.length bds in
         let ftys = CArray.Fun1.map mk_clos e tys in
         let fbds = CArray.Fun1.map mk_clos (subs_liftn n e) bds in
-	let lfts' = el_liftn (Array.length bds) lfts in
-	mkCoFix (op, (lna, CArray.Fun1.map constr_fun lfts ftys,
-		           CArray.Fun1.map constr_fun lfts' fbds))
+        let lfts' = el_liftn (Array.length bds) lfts in
+        mkCoFix (op, (lna, r, CArray.Fun1.map constr_fun lfts ftys,
+                      CArray.Fun1.map constr_fun lfts' fbds))
     | FApp (f,ve) ->
 	mkApp (constr_fun lfts f,
 	       CArray.Fun1.map constr_fun lfts ve)
@@ -620,15 +620,15 @@ let rec to_constr constr_fun lfts v =
         mkProj (p,constr_fun lfts c)
 
     | FLambda _ ->
-        let (na,ty,bd) = destFLambda mk_clos2 v in
-	mkLambda (na, constr_fun lfts ty,
+        let (na,r,ty,bd) = destFLambda mk_clos2 v in
+        mkLambda (na, r, constr_fun lfts ty,
 	              constr_fun (el_lift lfts) bd)
-    | FProd (n,t,c)   ->
-	mkProd (n, constr_fun lfts t,
+    | FProd (n,r,t,c)   ->
+        mkProd (n, r, constr_fun lfts t,
 	           constr_fun (el_lift lfts) c)
-    | FLetIn (n,b,t,f,e) ->
+    | FLetIn (n,r,b,t,f,e) ->
         let fc = mk_clos2 (subs_lift e) f in
-	mkLetIn (n, constr_fun lfts b,
+        mkLetIn (n, r, constr_fun lfts b,
 	            constr_fun lfts t,
 	            constr_fun (el_lift lfts) fc)
     | FEvar ((ev,args),env) ->
@@ -838,11 +838,11 @@ let rec project_nth_arg n argstk =
 let contract_fix_vect fix =
   let (thisbody, make_body, env, nfix) =
     match fix with
-      | FFix (((reci,i),(_,_,bds as rdcl)),env) ->
+      | FFix (((reci,i),(_,_,_,bds as rdcl)),env) ->
           (bds.(i),
 	   (fun j -> { norm = Cstr; term = FFix (((reci,j),rdcl),env) }),
 	   env, Array.length bds)
-      | FCoFix ((i,(_,_,bds as rdcl)),env) ->
+      | FCoFix ((i,(_,_,_,bds as rdcl)),env) ->
           (bds.(i),
 	   (fun j -> { norm = Cstr; term = FCoFix ((j,rdcl),env) }),
 	   env, Array.length bds)
@@ -870,7 +870,7 @@ let rec knh info m stk =
     | FLOCKED -> assert false
     | FApp(a,b) -> knh info a (append_stack b (zupdate m stk))
     | FCaseT(ci,p,t,br,e) -> knh info t (ZcaseT(ci,p,br,e)::zupdate m stk)
-    | FFix(((ri,n),(_,_,_)),_) ->
+    | FFix(((ri,n),_),_) ->
         (match get_nth_arg m ri.(n) stk with
              (Some(pars,arg),stk') -> knh info arg (Zfix(m,pars)::stk')
            | (None, stk') -> (m,stk'))
@@ -948,7 +948,7 @@ let rec knr info m stk =
             let (fxe,fxbd) = contract_fix_vect m.term in
             knit info fxe fxbd (args@stk')
         | (_,args,s) -> (m,args@s))
-  | FLetIn (_,v,_,bd,e) when red_set info.i_flags fZETA ->
+  | FLetIn (_,_,v,_,bd,e) when red_set info.i_flags fZETA ->
       knit info (subs_cons([|v|],e)) bd stk
   | FEvar(ev,env) ->
       (match evar_value info.i_cache ev with
@@ -1009,26 +1009,26 @@ and norm_head info m =
     match m.term with
       | FLambda(n,tys,f,e) ->
           let (e',rvtys) =
-            List.fold_left (fun (e,ctxt) (na,ty) ->
-              (subs_lift e, (na,kl info (mk_clos e ty))::ctxt))
+            List.fold_left (fun (e,ctxt) (na,r,ty) ->
+              (subs_lift e, (na,r,kl info (mk_clos e ty))::ctxt))
               (e,[]) tys in
           let bd = kl info (mk_clos e' f) in
-          List.fold_left (fun b (na,ty) -> mkLambda(na,ty,b)) bd rvtys
-      | FLetIn(na,a,b,f,e) ->
+          List.fold_left (fun b (na,r,ty) -> mkLambda(na,r,ty,b)) bd rvtys
+      | FLetIn(na,r,a,b,f,e) ->
           let c = mk_clos (subs_lift e) f in
-          mkLetIn(na, kl info a, kl info b, kl info c)
-      | FProd(na,dom,rng) ->
-          mkProd(na, kl info dom, kl info rng)
-      | FCoFix((n,(na,tys,bds)),e) ->
+          mkLetIn(na, r, kl info a, kl info b, kl info c)
+      | FProd(na,r,dom,rng) ->
+          mkProd(na, r, kl info dom, kl info rng)
+      | FCoFix((n,(na,r,tys,bds)),e) ->
           let ftys = CArray.Fun1.map mk_clos e tys in
           let fbds =
             CArray.Fun1.map mk_clos (subs_liftn (Array.length na) e) bds in
-          mkCoFix(n,(na, CArray.Fun1.map kl info ftys, CArray.Fun1.map kl info fbds))
-      | FFix((n,(na,tys,bds)),e) ->
+          mkCoFix(n,(na, r, CArray.Fun1.map kl info ftys, CArray.Fun1.map kl info fbds))
+      | FFix((n,(na,r,tys,bds)),e) ->
           let ftys = CArray.Fun1.map mk_clos e tys in
           let fbds =
             CArray.Fun1.map mk_clos (subs_liftn (Array.length na) e) bds in
-          mkFix(n,(na, CArray.Fun1.map kl info ftys, CArray.Fun1.map kl info fbds))
+          mkFix(n,(na, r, CArray.Fun1.map kl info ftys, CArray.Fun1.map kl info fbds))
       | FEvar((i,args),env) ->
           mkEvar(i, Array.map (fun a -> kl info (mk_clos env a)) args)
       | FProj (p,c) ->

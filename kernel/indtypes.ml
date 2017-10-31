@@ -132,9 +132,9 @@ let infos_and_sort env t =
   let rec aux env t max =
     let t = whd_all env t in
       match kind t with
-      | Prod (name,c1,c2) ->
+      | Prod (name,r,c1,c2) ->
         let varj = infer_type env c1 in
-	let env1 = Environ.push_rel (LocalAssum (name,varj.utj_val)) env in
+        let env1 = Environ.push_rel (LocalAssum (name,r,varj.utj_val)) env in
         let max = Universe.sup max (Sorts.univ_of_sort varj.utj_type) in
 	  aux env1 c2 max
     | _ when is_constructor_head t -> max
@@ -182,7 +182,7 @@ let cumulate_arity_large_levels env sign =
   fst (List.fold_right
     (fun d (lev,env) ->
      match d with
-     | LocalAssum (_,t) ->
+     | LocalAssum (_,_,t) ->
 	let tj = infer_type env t in
         let u = Sorts.univ_of_sort tj.utj_type in
 	  (Universe.sup u lev, push_rel d env)
@@ -199,7 +199,7 @@ let is_impredicative env u =
    or is Some u_k if its level is u_k and is contributing. *)
 let param_ccls paramsctxt =
   let fold acc = function
-    | (LocalAssum (_, p)) ->
+    | (LocalAssum (_, _, p)) ->
       (let c = Term.strip_prod_assum p in
       match kind c with
         | Sort (Type u) -> Univ.Universe.level u
@@ -217,7 +217,7 @@ let check_subtyping_arity_constructor env (subst : constr -> constr) (arcn : typ
   in
   let check_typ typ typ_env =
     match typ with
-    | LocalAssum (_, typ') ->
+    | LocalAssum (_, _, typ') ->
       begin
        try
           basic_check typ_env typ'; Environ.push_rel typ typ_env
@@ -323,7 +323,7 @@ let typecheck_inductive env mie =
 	 let full_arity = it_mkProd_or_LetIn arity paramsctxt in
 	 let id = ind.mind_entry_typename in
 	 let env_ar' =
-           push_rel (LocalAssum (Name id, full_arity)) env_ar in
+           push_rel (LocalAssum (Name id, Sorts.relevance_of_sort deflev, full_arity)) env_ar in
              (* (add_constraints cst2 env_ar) in *)
 	   (env_ar', (id,full_arity,sign @ paramsctxt,expltype,deflev,inflev)::l))
       (env',[])
@@ -516,15 +516,16 @@ if Int.equal nmr 0 then 0 else
      (i.e. range of inductives is [n; n+ntypes-1])
    [lra] is the list of recursive tree of each variable
  *)
-let ienv_push_var (env, n, ntypes, lra) (x,a,ra) =
-  (push_rel (LocalAssum (x,a)) env, n+1, ntypes, (Norec,ra)::lra)
+let ienv_push_var (env, n, ntypes, lra) (x,r,a,ra) =
+  (push_rel (LocalAssum (x,r,a)) env, n+1, ntypes, (Norec,ra)::lra)
 
 let ienv_push_inductive (env, n, ntypes, ra_env) ((mi,u),lrecparams) =
   let auxntyp = 1 in
   let specif = (lookup_mind_specif env mi, u) in
   let ty = type_of_inductive env specif in
   let env' =
-    let decl = LocalAssum (Anonymous, hnf_prod_applist env ty lrecparams) in
+    let r = (snd (fst specif)).mind_relevant in
+    let decl = LocalAssum (Anonymous, r, hnf_prod_applist env ty lrecparams) in
     push_rel decl env in
   let ra_env' =
     (Imbr mi,(Rtree.mk_rec_calls 1).(0)) ::
@@ -537,8 +538,8 @@ let rec ienv_decompose_prod (env,_,_,_ as ienv) n c =
   if Int.equal n 0 then (ienv,c) else
     let c' = whd_all env c in
     match kind c' with
-	Prod(na,a,b) ->
-	  let ienv' = ienv_push_var ienv (na,a,mk_norec) in
+        Prod(na,r,a,b) ->
+          let ienv' = ienv_push_var ienv (na,r,a,mk_norec) in
 	  ienv_decompose_prod ienv' (n-1) b
       | _ -> assert false
 
@@ -566,7 +567,7 @@ let check_positivity_one ~chkpos recursive (env,_,ntypes,_ as ienv) paramsctxt (
   let rec check_pos (env, n, ntypes, ra_env as ienv) nmr c =
     let x,largs = decompose_app (whd_all env c) in
       match kind x with
-	| Prod (na,b,d) ->
+        | Prod (na,r,b,d) ->
 	    let () = assert (List.is_empty largs) in
             (** If one of the inductives of the mutually inductive
                 block occurs in the left-hand side of a product, then
@@ -577,9 +578,9 @@ let check_positivity_one ~chkpos recursive (env,_,ntypes,_ as ienv) paramsctxt (
 	      | None when chkpos ->
                   failwith_non_pos_list n ntypes [b]
               | None ->
-                  check_pos (ienv_push_var ienv (na, b, mk_norec)) nmr d
+                  check_pos (ienv_push_var ienv (na, r, b, mk_norec)) nmr d
               | Some b ->
-                  check_pos (ienv_push_var ienv (na, b, mk_norec)) nmr d)
+                  check_pos (ienv_push_var ienv (na, r, b, mk_norec)) nmr d)
 	| Rel k ->
             (try let (ra,rarg) = List.nth ra_env (k-1) in
             let largs = List.map (whd_all env) largs in
@@ -675,12 +676,12 @@ let check_positivity_one ~chkpos recursive (env,_,ntypes,_ as ienv) paramsctxt (
       let x,largs = decompose_app (whd_all env c) in
 	match kind x with
 
-          | Prod (na,b,d) ->
+          | Prod (na,r,b,d) ->
 	      let () = assert (List.is_empty largs) in
 	      if not recursive && not (noccur_between n ntypes b) then
 	        raise (InductiveError BadEntry);
               let nmr',recarg = check_pos ienv nmr b in
-              let ienv' = ienv_push_var ienv (na,b,mk_norec) in
+              let ienv' = ienv_push_var ienv (na,r,b,mk_norec) in
                 check_constr_rec ienv' nmr' (recarg::lrec) d
           | hd ->
             let () =
@@ -797,7 +798,7 @@ exception UndefinableExpansion
     build an expansion function.
     The term built is expecting to be substituted first by 
     a substitution of the form [params, x : ind params] *)
-let compute_projections ((kn, _ as ind), u as indu) n x nparamargs params
+let compute_projections ((kn, _ as ind), u as indu) mind_relevant n x nparamargs params
     mind_consnrealdecls mind_consnrealargs paramslet ctx =
   let mp, dp, l = MutInd.repr3 kn in
   (** We build a substitution smashing the lets in the record parameters so
@@ -816,29 +817,30 @@ let compute_projections ((kn, _ as ind), u as indu) n x nparamargs params
       mkRel 1 :: List.map (lift 1) subst in
       ty, subst
   in
-  let ci = 
+  let ci r =
     let print_info =
       { ind_tags = []; cstr_tags = [|Context.Rel.to_tags ctx|]; style = LetStyle } in
       { ci_ind     = ind;
 	ci_npar    = nparamargs;
 	ci_cstr_ndecls = mind_consnrealdecls;
-	ci_cstr_nargs = mind_consnrealargs;
+        ci_cstr_nargs = mind_consnrealargs;
+        ci_relevance = r;
 	ci_pp_info = print_info }
   in
   let len = List.length ctx in
   let x = Name x in
-  let compat_body ccl i = 
+  let compat_body ccl r i =
     (* [ccl] is defined in context [params;x:indty] *)
     (* [ccl'] is defined in context [params;x:indty;x:indty] *)
     let ccl' = liftn 1 2 ccl in
-    let p = mkLambda (x, lift 1 indty, ccl') in
+    let p = mkLambda (x, mind_relevant, lift 1 indty, ccl') in
     let branch = it_mkLambda_or_LetIn (mkRel (len - i)) ctx in
-    let body = mkCase (ci, p, mkRel 1, [|lift 1 branch|]) in
-      it_mkLambda_or_LetIn (mkLambda (x,indty,body)) params
+    let body = mkCase (ci r, p, mkRel 1, [|lift 1 branch|]) in
+      it_mkLambda_or_LetIn (mkLambda (x,mind_relevant,indty,body)) params
   in
   let projections decl (i, j, kns, pbs, subst, letsubst) =
     match decl with
-    | LocalDef (na,c,t) ->
+    | LocalDef (na,_,c,t) ->
         (* From [params, field1,..,fieldj |- c(params,field1,..,fieldj)]
            to [params, x:I, field1,..,fieldj |- c(params,field1,..,fieldj)] *)
         let c = liftn 1 j c in
@@ -856,7 +858,7 @@ let compute_projections ((kn, _ as ind), u as indu) n x nparamargs params
            to [params-wo-let, x:I |- subst:(params, x:I, field1,..,fieldj+1)] *)
         let letsubst = c2 :: letsubst in
         (i, j+1, kns, pbs, subst, letsubst)
-    | LocalAssum (na,t) ->
+    | LocalAssum (na,relevance_t,t) ->
       match na with
       | Name id ->
 	let kn = Constant.make1 (KerName.make mp dp (Label.of_id id)) in
@@ -871,12 +873,12 @@ let compute_projections ((kn, _ as ind), u as indu) n x nparamargs params
 	let ty = substl subst t in
 	let term = mkProj (Projection.make kn true, mkRel 1) in
 	let fterm = mkProj (Projection.make kn false, mkRel 1) in
-	let compat = compat_body ty (j - 1) in
-	let etab = it_mkLambda_or_LetIn (mkLambda (x, indty, term)) params in
-	let etat = it_mkProd_or_LetIn (mkProd (x, indty, ty)) params in
+        let compat = compat_body ty relevance_t (j - 1) in
+        let etab = it_mkLambda_or_LetIn (mkLambda (x, mind_relevant, indty, term)) params in
+        let etat = it_mkProd_or_LetIn (mkProd (x, mind_relevant, indty, ty)) params in
 	let body = { proj_ind = fst ind; proj_npars = nparamargs;
 		     proj_arg = i; proj_type = projty; proj_eta = etab, etat; 
-		     proj_body = compat } in
+                     proj_body = compat; proj_relevance = relevance_t; } in
 	  (i + 1, j + 1, kn :: kns, body :: pbs,
 	   fterm :: subst, fterm :: letsubst)
       | Anonymous -> raise UndefinableExpansion
@@ -925,18 +927,18 @@ let build_inductive env prv iu env_ar paramsctxt kn isrecord isfinite inds nmr r
       Array.map (fun (d,_) -> Context.Rel.nhyps d - nparamargs)
 	splayed_lc in
     (* Elimination sorts *)
-    let arkind,kelim = 
+    let arkind,kelim, mind_relevant =
       match ar_kind with
       | TemplateArity (paramlevs, lev) -> 
 	let ar = {template_param_levels = paramlevs; template_level = lev} in
-	  TemplateArity ar, all_sorts
+          TemplateArity ar, all_sorts, Sorts.relevance_of_sort (Sorts.sort_of_univ lev)
       | RegularArity (info,ar,defs) ->
         let s = Sorts.sort_of_univ defs in
 	let kelim = allowed_sorts info s in
 	let ar = RegularArity 
 	  { mind_user_arity = Vars.subst_univs_level_constr substunivs ar; 
             mind_sort = Sorts.sort_of_univ (Univ.subst_univs_level_universe substunivs defs); } in
-	  ar, kelim in
+          ar, kelim, Sorts.relevance_of_sort s in
     (* Assigning VM tags to constructors *)
     let nconst, nblock = ref 0, ref 0 in
     let transf num =
@@ -963,8 +965,9 @@ let build_inductive env prv iu env_ar paramsctxt kn isrecord isfinite inds nmr r
 	mind_consnrealargs = consnrealargs;
 	mind_user_lc = lc;
 	mind_nf_lc = nf_lc;
-	mind_recargs = recarg;
-	mind_nb_constant = !nconst;
+        mind_recargs = recarg;
+        mind_relevant;
+        mind_nb_constant = !nconst;
 	mind_nb_args = !nblock;
 	mind_reloc_tbl = rtbl;
       } in
@@ -987,7 +990,7 @@ let build_inductive env prv iu env_ar paramsctxt kn isrecord isfinite inds nmr r
 	(try 
 	   let fields, paramslet = List.chop pkt.mind_consnrealdecls.(0) rctx in
 	   let kns, projs = 
-	     compute_projections indsp pkt.mind_typename rid nparamargs paramsctxt
+             compute_projections indsp pkt.mind_relevant pkt.mind_typename rid nparamargs paramsctxt
 	       pkt.mind_consnrealdecls pkt.mind_consnrealargs paramslet fields
 	   in Some (Some (rid, kns, projs))
 	 with UndefinableExpansion -> Some None)

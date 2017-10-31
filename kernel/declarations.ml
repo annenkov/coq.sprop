@@ -54,6 +54,7 @@ type projection_body = {
   proj_type : types; (* Type under params *)
   proj_eta : constr * types; (* Eta-expanded term and type *)
   proj_body : constr; (* For compatibility with VMs only, the match version *)
+  proj_relevance : Sorts.relevance;
 }
 
 (* Global declarations (i.e. constants) can be either: *)
@@ -83,6 +84,7 @@ type constant_body = {
     const_hyps : Context.Named.t; (** New: younger hyp at top *)
     const_body : constant_def;
     const_type : types;
+    const_relevance : Sorts.relevance;
     const_body_code : Cemitcodes.to_patch_substituted option;
     const_universes : constant_universes;
     const_proj : projection_body option;
@@ -158,6 +160,8 @@ type one_inductive_body = {
  (** Length of the signature of the constructors (with let, w/o params) *)
 
     mind_recargs : wf_paths; (** Signature of recursive arguments in the constructors *)
+
+    mind_relevant : Sorts.relevance;
 
 (** {8 Datas for bytecode compilation } *)
 

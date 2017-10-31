@@ -67,7 +67,7 @@ let clenv_push_prod cl =
   let typ = whd_all (cl_env cl) (cl_sigma cl) (clenv_type cl) in
   let rec clrec typ = match EConstr.kind cl.evd typ with
     | Cast (t,_,_) -> clrec t
-    | Prod (na,t,u) ->
+    | Prod (na,_,t,u) ->
 	let mv = new_meta () in
 	let dep = not (noccurn (cl_sigma cl) 1 u) in
 	let na' = if dep then na else Anonymous in
@@ -101,7 +101,7 @@ let clenv_environments evd bound t =
     match n, EConstr.kind evd t with
       | (Some 0, _) -> (e, List.rev metas, t)
       | (n, Cast (t,_,_)) -> clrec (e,metas) n t
-      | (n, Prod (na,t1,t2)) ->
+      | (n, Prod (na,_,t1,t2)) ->
 	  let mv = new_meta () in
 	  let dep = not (noccurn evd 1 t2) in
 	  let na' = if dep then na else Anonymous in
@@ -109,7 +109,7 @@ let clenv_environments evd bound t =
 	  let e' = meta_declare mv t1 ~name:na' e in
 	  clrec (e', (mkMeta mv)::metas) (Option.map ((+) (-1)) n)
 	    (if dep then (subst1 (mkMeta mv) t2) else t2)
-      | (n, LetIn (na,b,_,t)) -> clrec (e,metas) n (subst1 b t)
+      | (n, LetIn (na,_,b,_,t)) -> clrec (e,metas) n (subst1 b t)
       | (n, _) -> (e, List.rev metas, t)
   in
   clrec (evd,[]) bound t
@@ -279,8 +279,8 @@ let adjust_meta_source evd mv = function
   | loc,Evar_kinds.VarInstance id ->
     let rec match_name c l =
       match EConstr.kind evd c, l with
-      | Lambda (Name id,_,c), a::l when EConstr.eq_constr evd a (mkMeta mv) -> Some id
-      | Lambda (_,_,c), a::l -> match_name c l
+      | Lambda (Name id,_,_,c), a::l when EConstr.eq_constr evd a (mkMeta mv) -> Some id
+      | Lambda (_,_,_,c), a::l -> match_name c l
       | _ -> None in
     (* This is very ad hoc code so that an evar inherits the name of the binder
        in situations like "ex_intro (fun x => P) ?ev p" *)
@@ -610,7 +610,7 @@ let make_evar_clause env sigma ?len t =
     if n = 0 then (sigma, holes, t)
     else match EConstr.kind sigma t with
     | Cast (t, _, _) -> clrec (sigma, holes) n t
-    | Prod (na, t1, t2) ->
+    | Prod (na, _, t1, t2) ->
       let store = Typeclasses.set_resolvable Evd.Store.empty false in
       let (sigma, ev) = new_evar ~store env sigma t1 in
       let dep = not (noccurn sigma 1 t2) in
@@ -623,7 +623,7 @@ let make_evar_clause env sigma ?len t =
       } in
       let t2 = if dep then subst1 ev t2 else t2 in
       clrec (sigma, hole :: holes) (pred n) t2
-    | LetIn (na, b, _, t) -> clrec (sigma, holes) n (subst1 b t)
+    | LetIn (na, _, b, _, t) -> clrec (sigma, holes) n (subst1 b t)
     | _ -> (sigma, holes, t)
   in
   let (sigma, holes, t) = clrec (sigma, []) bound t in

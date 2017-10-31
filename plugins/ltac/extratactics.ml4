@@ -309,7 +309,7 @@ let project_hint ~poly pri l2r r =
   let p = EConstr.of_constr p in
   let c = Reductionops.whd_beta sigma (mkApp (c, Context.Rel.to_extended_vect mkRel 0 sign)) in
   let c = it_mkLambda_or_LetIn
-    (mkApp (p,[|mkArrow a (lift 1 b);mkArrow b (lift 1 a);c|])) sign in
+    (mkApp (p,[|mkArrow a Sorts.Relevant (lift 1 b);mkArrow b Sorts.Relevant (lift 1 a);c|])) sign in
   let id =
     Nameops.add_suffix (Nametab.basename_of_global gr) ("_proj_" ^ (if l2r then "l2r" else "r2l"))
   in
@@ -711,7 +711,7 @@ let hResolve id c occ t =
   let sigma = Evd.merge_universe_context sigma ctx in
   let t_constr_type = Retyping.get_type_of env sigma t_constr in
   Proofview.tclTHEN (Proofview.Unsafe.tclEVARS sigma)
-    (change_concl (mkLetIn (Name.Anonymous,t_constr,t_constr_type,concl)))
+    (change_concl (mkLetIn (Name.Anonymous,Sorts.Relevant,t_constr,t_constr_type,concl)))
   end
 
 let hResolve_auto id c t =

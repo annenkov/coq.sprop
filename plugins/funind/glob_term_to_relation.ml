@@ -352,9 +352,9 @@ let raw_push_named (na,raw_value,raw_typ) env =
         let typ,_ = Pretyping.understand env (Evd.from_env env) ~expected_type:Pretyping.IsType raw_typ in
         (match raw_value with
         | None ->
-           Environ.push_named (NamedDecl.LocalAssum (id,typ)) env
+           Environ.push_named (NamedDecl.LocalAssum (id,Sorts.Relevant,typ)) env
         | Some value ->
-           Environ.push_named (NamedDecl.LocalDef (id, value, typ)) env)
+           Environ.push_named (NamedDecl.LocalDef (id, Sorts.Relevant, value, typ)) env)
 
 
 let add_pat_variables pat typ env : Environ.env =
@@ -362,7 +362,7 @@ let add_pat_variables pat typ env : Environ.env =
     observe (str "new rel env := " ++ Printer.pr_rel_context_of env (Evd.from_env env));
 
     match DAst.get pat with
-      | PatVar na -> Environ.push_rel (RelDecl.LocalAssum (na,typ)) env
+      | PatVar na -> Environ.push_rel (RelDecl.LocalAssum (na,Sorts.Relevant,typ)) env
       | PatCstr(c,patl,na) ->
 	  let Inductiveops.IndType(indf,indargs) =
 	    try Inductiveops.find_rectype env (Evd.from_env env) (EConstr.of_constr typ)
@@ -381,16 +381,16 @@ let add_pat_variables pat typ env : Environ.env =
            let open Context.Rel.Declaration in
            let sigma, _ = Pfedit.get_current_context () in
            match decl with
-	   | LocalAssum (Anonymous,_) | LocalDef (Anonymous,_,_) -> assert false
-	   | LocalAssum (Name id, t) ->
+           | LocalAssum (Anonymous,_,_) | LocalDef (Anonymous,_,_,_) -> assert false
+           | LocalAssum (Name id, r, t) ->
              let new_t =  substl ctxt t in
              observe (str "for variable " ++ Ppconstr.pr_id id ++  fnl () ++
                       str "old type := " ++ Printer.pr_lconstr_env env sigma t ++ fnl () ++
                       str "new type := " ++ Printer.pr_lconstr_env env sigma new_t ++ fnl ()
                      );
              let open Context.Named.Declaration in
-             (Environ.push_named (LocalAssum (id,new_t)) env,mkVar id::ctxt)
-           | LocalDef (Name id, v, t) ->
+             (Environ.push_named (LocalAssum (id,r,new_t)) env,mkVar id::ctxt)
+           | LocalDef (Name id, r, v, t) ->
              let new_t =  substl ctxt t in
              let new_v = substl ctxt v in
              observe (str "for variable " ++ Ppconstr.pr_id id ++  fnl () ++
@@ -400,7 +400,7 @@ let add_pat_variables pat typ env : Environ.env =
                       str "new value := " ++ Printer.pr_lconstr_env env sigma new_v ++ fnl ()
                      );
              let open Context.Named.Declaration in
-             (Environ.push_named (LocalDef (id,new_v,new_t)) env,mkVar id::ctxt)
+             (Environ.push_named (LocalDef (id,r,new_v,new_t)) env,mkVar id::ctxt)
         )
 	(Environ.rel_context new_env)
 	~init:(env,[])
@@ -636,7 +636,7 @@ let rec build_entry_lc env funnames avoid rt : glob_constr build_entry_return =
 	let new_env =
 	  match n with
 	      Anonymous -> env
-	    | Name id -> Environ.push_named (NamedDecl.LocalDef (id,v_as_constr,v_type)) env
+            | Name id -> Environ.push_named (NamedDecl.LocalDef (id,Sorts.Relevant,v_as_constr,v_type)) env
 	in
 	let b_res = build_entry_lc new_env funnames avoid b in
 	combine_results (combine_letin n) v_res b_res
@@ -948,7 +948,7 @@ let rec rebuild_cons env nb_args relname args crossed_types depth rt =
 			  mkGApp(mkGVar(mk_rel_id this_relname),List.tl args'@[res_rt])
 			in
 			let t',ctx = Pretyping.understand env (Evd.from_env env) new_t in
-			let new_env = Environ.push_rel (LocalAssum (n,t')) env in
+                        let new_env = Environ.push_rel (LocalAssum (n,Sorts.Relevant,t')) env in
 			let new_b,id_to_exclude =
 			  rebuild_cons new_env
 			    nb_args relname
@@ -983,7 +983,7 @@ let rec rebuild_cons env nb_args relname args crossed_types depth rt =
 		    let subst_b =
 		      if is_in_b then b else  replace_var_by_term id rt b
 		    in
-		    let new_env = Environ.push_rel (LocalAssum (n,t')) env in
+                    let new_env = Environ.push_rel (LocalAssum (n,Sorts.Relevant,t')) env in
 		    let new_b,id_to_exclude =
 		      rebuild_cons
 			new_env
@@ -1065,7 +1065,7 @@ let rec rebuild_cons env nb_args relname args crossed_types depth rt =
 		    in
 		    let new_env =
 		      let t',ctx = Pretyping.understand env (Evd.from_env env) eq' in
-		      Environ.push_rel (LocalAssum (n,t')) env
+                      Environ.push_rel (LocalAssum (n,Sorts.Relevant,t')) env
 		    in
 		    let new_b,id_to_exclude =
 		      rebuild_cons
@@ -1103,7 +1103,7 @@ let rec rebuild_cons env nb_args relname args crossed_types depth rt =
 	      with Continue -> 
                 observe (str "computing new type for prod : " ++ pr_glob_constr_env env rt);
 		let t',ctx = Pretyping.understand env (Evd.from_env env) t in
-		let new_env = Environ.push_rel (LocalAssum (n,t')) env in
+                let new_env = Environ.push_rel (LocalAssum (n,Sorts.Relevant,t')) env in
 		let new_b,id_to_exclude =
 		  rebuild_cons new_env
 		    nb_args relname
@@ -1119,7 +1119,7 @@ let rec rebuild_cons env nb_args relname args crossed_types depth rt =
 	    | _ ->
                 observe (str "computing new type for prod : " ++ pr_glob_constr_env env rt);
 		let t',ctx = Pretyping.understand env (Evd.from_env env) t in
-		let new_env = Environ.push_rel (LocalAssum (n,t')) env in
+                let new_env = Environ.push_rel (LocalAssum (n,Sorts.Relevant,t')) env in
 		let new_b,id_to_exclude =
 		  rebuild_cons new_env
 		    nb_args relname
@@ -1140,7 +1140,7 @@ let rec rebuild_cons env nb_args relname args crossed_types depth rt =
 	  let t',ctx = Pretyping.understand env (Evd.from_env env) t in
 	  match n with
 	    | Name id ->
-		let new_env = Environ.push_rel (LocalAssum (n,t')) env in
+                let new_env = Environ.push_rel (LocalAssum (n,Sorts.Relevant,t')) env in
 		let new_b,id_to_exclude =
 		  rebuild_cons new_env
 		    nb_args relname
@@ -1165,7 +1165,7 @@ let rec rebuild_cons env nb_args relname args crossed_types depth rt =
 	  let evd = Evd.from_ctx ctx in
 	  let type_t' = Typing.unsafe_type_of env evd (EConstr.of_constr t') in
 	  let type_t' = EConstr.Unsafe.to_constr type_t' in
-	  let new_env = Environ.push_rel (LocalDef (n,t',type_t')) env in
+          let new_env = Environ.push_rel (LocalDef (n,Sorts.Relevant,t',type_t')) env in
 	  let new_b,id_to_exclude =
 	    rebuild_cons new_env
 	      nb_args relname
@@ -1189,7 +1189,7 @@ let rec rebuild_cons env nb_args relname args crossed_types depth rt =
 	      depth t
 	  in
 	  let t',ctx = Pretyping.understand env (Evd.from_env env) new_t in
-	  let new_env = Environ.push_rel (LocalAssum (na,t')) env in
+          let new_env = Environ.push_rel (LocalAssum (na,Sorts.Relevant,t')) env in
 	  let new_b,id_to_exclude =
 	    rebuild_cons new_env
 	      nb_args relname
@@ -1327,7 +1327,7 @@ let do_build_inductive
        let evd,t = Typing.type_of env evd (EConstr.mkConstU (c, u)) in
        let t = EConstr.Unsafe.to_constr t in
        evd,
-       Environ.push_named (LocalAssum (id,t))
+       Environ.push_named (LocalAssum (id,Sorts.Relevant,t))
 			 env
       )
       funnames
@@ -1369,7 +1369,7 @@ let do_build_inductive
     *)
     let rel_arities = Array.mapi rel_arity funsargs in
     Util.Array.fold_left2 (fun env rel_name rel_ar ->
-			     Environ.push_named (LocalAssum (rel_name,
+                             Environ.push_named (LocalAssum (rel_name,Sorts.Relevant,
 						             fst (with_full_print (Constrintern.interp_constr env evd) rel_ar))) env) env relnames rel_arities
   in
   (* and of the real constructors*)

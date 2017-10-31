@@ -171,6 +171,7 @@ sig
 
   val split_when : ('a -> bool) -> 'a list -> 'a list * 'a list
   val split3 : ('a * 'b * 'c) list -> 'a list * 'b list * 'c list
+  val split4 : ('a * 'b * 'c * 'd) list -> 'a list * 'b list * 'c list * 'd list
   val firstn : int -> 'a list -> 'a list
   val last : 'a list -> 'a
   val lastn : int -> 'a list -> 'a list

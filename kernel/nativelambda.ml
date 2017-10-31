@@ -322,7 +322,7 @@ let set_global_env env = global_env := env
 
 let get_names decl = 
   let decl = Array.of_list decl in
-  Array.map fst decl
+  Array.map pi1 decl
 
 (* Rel Environment *)
 module Vect = 
@@ -473,7 +473,7 @@ let rec lambda_of_constr env sigma c =
       let prefix = get_mind_prefix !global_env (fst ind) in
       Lind (prefix, pind)
 
-  | Prod(id, dom, codom) ->
+  | Prod(id, _, dom, codom) ->
       let ld = lambda_of_constr env sigma dom in
       Renv.push_rel env id;
       let lc = lambda_of_constr env sigma codom in
@@ -488,7 +488,7 @@ let rec lambda_of_constr env sigma c =
       Renv.popn env (Array.length ids);
       mkLlam ids lb
 
-  | LetIn(id, def, _, body) ->
+  | LetIn(id, _, def, _, body) ->
       let ld = lambda_of_constr env sigma def in
       Renv.push_rel env id;
       let lb = lambda_of_constr env sigma body in
@@ -547,14 +547,14 @@ let rec lambda_of_constr env sigma c =
       let bs = Array.mapi mk_branch branches in
       Lcase(annot_sw, lt, la, bs)
 	
-  | Fix(rec_init,(names,type_bodies,rec_bodies)) ->
+  | Fix(rec_init,(names,_,type_bodies,rec_bodies)) ->
       let ltypes = lambda_of_args env sigma 0 type_bodies in
       Renv.push_rels env names;
       let lbodies = lambda_of_args env sigma 0 rec_bodies in
       Renv.popn env (Array.length names);
       Lfix(rec_init, (names, ltypes, lbodies))
 	
-  | CoFix(init,(names,type_bodies,rec_bodies)) ->
+  | CoFix(init,(names,_,type_bodies,rec_bodies)) ->
       let ltypes = lambda_of_args env sigma 0 type_bodies in 
       Renv.push_rels env names;
       let lbodies = lambda_of_args env sigma 0 rec_bodies in

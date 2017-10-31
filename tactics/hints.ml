@@ -759,7 +759,7 @@ let _ = Summary.declare_summary "search"
 (**************************************************************************)
 
 let rec nb_hyp sigma c = match EConstr.kind sigma c with
-  | Prod(_,_,c2) -> if noccurn sigma 1 c2 then 1+(nb_hyp sigma c2) else nb_hyp sigma c2
+  | Prod(_,_,_,c2) -> if noccurn sigma 1 c2 then 1+(nb_hyp sigma c2) else nb_hyp sigma c2
   | _ -> 0
 
 (* adding and removing tactics in the search table *)
@@ -1259,7 +1259,7 @@ let prepare_hint check (poly,local) env init (sigma,c) =
       let id = next_ident_away_from default_prepare_hint_ident (fun id -> Id.Set.mem id !vars) in
       vars := Id.Set.add id !vars;
       subst := (evar,mkVar id)::!subst;
-      mkNamedLambda id t (iter (replace_term sigma evar (mkVar id) c)) in
+      mkNamedLambda id Sorts.Relevant t (iter (replace_term sigma evar (mkVar id) c)) in
   let c' = iter c in
     if check then Pretyping.check_evars (Global.env()) Evd.empty sigma c';
     let diff = Univ.ContextSet.diff (Evd.universe_context_set sigma) (Evd.universe_context_set init) in

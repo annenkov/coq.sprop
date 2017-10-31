@@ -538,7 +538,7 @@ and oproposition_of_constr env ((negated,depends,origin,path) as ctxt) gl c =
     | Riff (t1,t2) ->
        (* No lifting here, since Omega only works on closed propositions. *)
        binprop env ctxt negated negated gl mkPand
-         (Term.mkArrow t1 t2) (Term.mkArrow t2 t1)
+         (Term.mkArrow t1 Sorts.Relevant t2) (Term.mkArrow t2 Sorts.Relevant t1)
     | _ -> Pprop c
 
 (* Destructuration des hypothèses et de la conclusion *)
@@ -557,12 +557,12 @@ let reify_hyp env gl i =
   let open Context.Named.Declaration in
   let ctxt = (false,[],i,[]) in
   match Tacmach.New.pf_get_hyp i gl with
-  | LocalDef (_,d,t) when Z.is_int_typ gl (EConstr.Unsafe.to_constr t) ->
+  | LocalDef (_,_,d,t) when Z.is_int_typ gl (EConstr.Unsafe.to_constr t) ->
      let d = EConstr.Unsafe.to_constr d in
      let dummy = Lazy.force coq_True in
      let p = mk_equation env ctxt dummy Eq (mkVar i) d in
      i,Defined,p
-  | LocalDef (_,_,t) | LocalAssum (_,t) ->
+  | LocalDef (_,_,_,t) | LocalAssum (_,_,t) ->
      let t = EConstr.Unsafe.to_constr t in
      let p = oproposition_of_constr env ctxt gl t in
      i,Assumed,p
@@ -775,7 +775,7 @@ let maximize_prop equas c =
         | t1', t2' -> Pand(i,t1',t2'))
     | Pimp(i,t1,t2) ->
        (match loop t1, loop t2 with
-        | Pprop p1, Pprop p2 -> Pprop (Term.mkArrow p1 p2) (* no lift (closed) *)
+        | Pprop p1, Pprop p2 -> Pprop (Term.mkArrow p1 Sorts.Relevant p2) (* no lift (closed) *)
         | t1', t2' -> Pimp(i,t1',t2'))
     | Ptrue -> Pprop (app coq_True [||])
     | Pfalse -> Pprop (app coq_False [||])

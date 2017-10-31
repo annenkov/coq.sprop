@@ -63,12 +63,7 @@ let adjust_guardness_conditions const = function
         Future.chain const.const_entry_body
         (fun ((body, ctx), eff) ->
           match Constr.kind body with
-          | Fix ((nv,0),(_,_,fixdefs as fixdecls)) ->
-(*      let possible_indexes =
-	List.map2 (fun i c -> match i with Some i -> i | None ->
-	  List.interval 0 (List.length ((lam_assum c))))
-	  lemma_guard (Array.to_list fixdefs) in
-*)
+          | Fix ((nv,0),fixdecls) ->
               let add c cb e =
                 let exists c e =
                   try ignore(Environ.lookup_constant c e); true
@@ -254,8 +249,8 @@ let save_remaining_recthms (locality,p,kind) norm univs body opaq i (id,(t_i,(_,
       let rec body_i t = match Constr.kind t with
         | Fix ((nv,0),decls) -> mkFix ((nv,i),decls)
         | CoFix (0,decls) -> mkCoFix (i,decls)
-        | LetIn(na,t1,ty,t2) -> mkLetIn (na,t1,ty, body_i t2)
-        | Lambda(na,ty,t) -> mkLambda(na,ty,body_i t)
+        | LetIn(na,r,t1,ty,t2) -> mkLetIn (na,r,t1,ty, body_i t2)
+        | Lambda(na,r,ty,t) -> mkLambda(na,r,ty,body_i t)
         | App (t, args) -> mkApp (body_i t, args)
         | _ ->
           let sigma, env = Pfedit.get_current_context () in

@@ -42,7 +42,7 @@ type cbv_value =
   | VAL of int * constr
   | STACK of int * cbv_value * cbv_stack
   | CBN of constr * cbv_value subs
-  | LAM of int * (Name.t * constr) list * constr * cbv_value subs
+  | LAM of int * (Name.t * Sorts.relevance * constr) list * constr * cbv_value subs
   | FIXP of fixpoint * cbv_value subs * cbv_value array
   | COFIXP of cofixpoint * cbv_value subs * cbv_value array
   | CONSTR of constructor Univ.puniverses * cbv_value array
@@ -97,12 +97,12 @@ let shift_value n v =
  * (S, (fix Fi {F0 := T0 .. Fn-1 := Tn-1}))
  *    -> (S. [S]F0 . [S]F1 ... . [S]Fn-1, Ti)
  *)
-let contract_fixp env ((reci,i),(_,_,bds as bodies)) =
+let contract_fixp env ((reci,i),(_,_,_,bds as bodies)) =
   let make_body j = FIXP(((reci,j),bodies), env, [||]) in
   let n = Array.length bds in
   subs_cons(Array.init n make_body, env), bds.(i)
 
-let contract_cofixp env (i,(_,_,bds as bodies)) =
+let contract_cofixp env (i,(_,_,_,bds as bodies)) =
   let make_body j = COFIXP((j,bodies), env, [||]) in
   let n = Array.length bds in
   subs_cons(Array.init n make_body, env), bds.(i)
@@ -211,13 +211,13 @@ and reify_value = function (* reduction under binders *)
     apply_env env t
   | LAM (k,ctxt,b,env) ->
     apply_env env @@
-    List.fold_left (fun c (n,t) ->
-        mkLambda (n, t, c)) b ctxt
-  | FIXP ((lij,(names,lty,bds)),env,args) ->
-    let fix = mkFix (lij, (names, lty, bds)) in
+    List.fold_left (fun c (n,r,t) ->
+        mkLambda (n, r, t, c)) b ctxt
+  | FIXP ((lij,fix),env,args) ->
+    let fix = mkFix (lij, fix) in
     mkApp (apply_env env fix, Array.map reify_value args)
-  | COFIXP ((j,(names,lty,bds)),env,args) ->
-    let cofix = mkCoFix (j, (names,lty,bds)) in
+  | COFIXP ((j,cofix),env,args) ->
+    let cofix = mkCoFix (j, cofix) in
     mkApp (apply_env env cofix, Array.map reify_value args)
   | CONSTR (c,args) ->
       mkApp(mkConstructU c, Array.map reify_value args)
@@ -282,7 +282,7 @@ let rec norm_head info env t stack =
       Reductionops.reduction_effect_hook (env_of_infos info.infos) info.sigma t (lazy (reify_stack t stack));
       norm_head_ref 0 info env stack (ConstKey sp)
 
-  | LetIn (_, b, _, c) ->
+  | LetIn (_, _, b, _, c) ->
       (* zeta means letin are contracted; delta without zeta means we *)
       (* allow bindings but leave let's in place *)
       if red_set (info_flags info.infos) fZETA then
@@ -424,21 +424,21 @@ and cbv_norm_value info = function (* reduction under binders *)
       Constr.map_with_binders subs_lift (cbv_norm_term info) env t
   | LAM (n,ctxt,b,env) ->
       let nctxt =
-        List.map_i (fun i (x,ty) ->
-          (x,cbv_norm_term info (subs_liftn i env) ty)) 0 ctxt in
+        List.map_i (fun i (x,r,ty) ->
+          (x,r,cbv_norm_term info (subs_liftn i env) ty)) 0 ctxt in
       Term.compose_lam (List.rev nctxt) (cbv_norm_term info (subs_liftn n env) b)
-  | FIXP ((lij,(names,lty,bds)),env,args) ->
+  | FIXP ((lij,(names,rs,lty,bds)),env,args) ->
       mkApp
         (mkFix (lij,
-		(names,
+                (names,rs,
                  Array.map (cbv_norm_term info env) lty,
 		 Array.map (cbv_norm_term info
 			      (subs_liftn (Array.length lty) env)) bds)),
          Array.map (cbv_norm_value info) args)
-  | COFIXP ((j,(names,lty,bds)),env,args) ->
+  | COFIXP ((j,(names,rs,lty,bds)),env,args) ->
       mkApp
         (mkCoFix (j,
-		  (names,Array.map (cbv_norm_term info env) lty,
+                  (names,rs,Array.map (cbv_norm_term info env) lty,
 		   Array.map (cbv_norm_term info
 				(subs_liftn (Array.length lty) env)) bds)),
          Array.map (cbv_norm_value info) args)

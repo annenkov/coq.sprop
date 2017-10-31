@@ -149,7 +149,7 @@ val pf_e_type_of :
 val splay_open_constr : 
            Goal.goal Evd.sigma ->
            evar_map * EConstr.t ->
-           (Names.Name.t * EConstr.t) list * EConstr.t
+           (Names.Name.t * Sorts.relevance * EConstr.t) list * EConstr.t
 val isAppInd : Goal.goal Evd.sigma -> EConstr.types -> bool
 val interp_view_nbimps :
            Tacinterp.interp_sign ->

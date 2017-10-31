@@ -36,7 +36,7 @@ let pr_sort_family = function
 
 let pr_con sp = str(Constant.to_string sp)
 
-let pr_fix pr_constr ((t,i),(lna,tl,bl)) =
+let pr_fix pr_constr ((t,i),(lna,_,tl,bl)) =
   let fixl = Array.mapi (fun i na -> (na,t.(i),tl.(i),bl.(i))) lna in
   hov 1
       (str"fix " ++ int i ++ spc() ++  str"{" ++
@@ -57,16 +57,16 @@ let rec pr_constr c = match kind c with
   | Cast (c,_, t) -> hov 1
       (str"(" ++ pr_constr c ++ cut() ++
        str":" ++ pr_constr t ++ str")")
-  | Prod (Name(id),t,c) -> hov 1
+  | Prod (Name(id),_,t,c) -> hov 1
       (str"forall " ++ Id.print id ++ str":" ++ pr_constr t ++ str"," ++
        spc() ++ pr_constr c)
-  | Prod (Anonymous,t,c) -> hov 0
+  | Prod (Anonymous,_,t,c) -> hov 0
       (str"(" ++ pr_constr t ++ str " ->" ++ spc() ++
        pr_constr c ++ str")")
-  | Lambda (na,t,c) -> hov 1
+  | Lambda (na,_,t,c) -> hov 1
       (str"fun " ++ Name.print na ++ str":" ++
        pr_constr t ++ str" =>" ++ spc() ++ pr_constr c)
-  | LetIn (na,b,t,c) -> hov 0
+  | LetIn (na,_,b,t,c) -> hov 0
       (str"let " ++ Name.print na ++ str":=" ++ pr_constr b ++
        str":" ++ brk(1,2) ++ pr_constr t ++ cut() ++
        pr_constr c)
@@ -87,7 +87,7 @@ let rec pr_constr c = match kind c with
        prlist_with_sep (fun _ -> brk(1,2)) pr_constr (Array.to_list bl) ++
       cut() ++ str"end")
   | Fix f -> pr_fix pr_constr f
-  | CoFix(i,(lna,tl,bl)) ->
+  | CoFix(i,(lna,_,tl,bl)) ->
       let fixl = Array.mapi (fun i na -> (na,tl.(i),bl.(i))) lna in
       hov 1
         (str"cofix " ++ int i ++ spc() ++  str"{" ++
@@ -180,8 +180,8 @@ let pr_decl (decl,ok) =
   let open NamedDecl in
   let print_constr = print_kconstr in
   match decl with
-  | LocalAssum (id,_) -> if ok then Id.print id else (str "{" ++ Id.print id ++ str "}")
-  | LocalDef (id,c,_) -> str (if ok then "(" else "{") ++ Id.print id ++ str ":=" ++
+  | LocalAssum (id,_,_) -> if ok then Id.print id else (str "{" ++ Id.print id ++ str "}")
+  | LocalDef (id,_,c,_) -> str (if ok then "(" else "{") ++ Id.print id ++ str ":=" ++
                            print_constr c ++ str (if ok then ")" else "}")
 
 let pr_evar_source = function
@@ -308,8 +308,8 @@ let pr_evar_universe_context ctx =
 let print_env_short env =
   let print_constr = print_kconstr in
   let pr_rel_decl = function
-    | RelDecl.LocalAssum (n,_) -> Name.print n
-    | RelDecl.LocalDef (n,b,_) -> str "(" ++ Name.print n ++ str " := " ++ print_constr b ++ str ")"
+    | RelDecl.LocalAssum (n,_,_) -> Name.print n
+    | RelDecl.LocalDef (n,_,b,_) -> str "(" ++ Name.print n ++ str " := " ++ print_constr b ++ str ")"
   in
   let pr_named_decl = NamedDecl.to_rel_decl %> pr_rel_decl in
   let nc = List.rev (named_context env) in
@@ -430,7 +430,7 @@ let pr_var_decl env decl =
   let open NamedDecl in
   let pbody = match decl with
     | LocalAssum _ ->  mt ()
-    | LocalDef (_,c,_) ->
+    | LocalDef (_,_,c,_) ->
 	(* Force evaluation *)
 	let c = EConstr.of_constr c in
 	let pb = print_constr_env env Evd.empty c in
@@ -443,7 +443,7 @@ let pr_rel_decl env decl =
   let open RelDecl in
   let pbody = match decl with
     | LocalAssum _ -> mt ()
-    | LocalDef (_,c,_) ->
+    | LocalDef (_,_,c,_) ->
 	(* Force evaluation *)
 	let c = EConstr.of_constr c in
 	let pb = print_constr_env env Evd.empty c in
@@ -490,24 +490,24 @@ let rel_list n m =
   in
   reln [] 1
 
-let push_rel_assum (x,t) env =
+let push_rel_assum (x,r,t) env =
   let open RelDecl in
   let open EConstr in
-  push_rel (LocalAssum (x,t)) env
+  push_rel (LocalAssum (x,r,t)) env
 
 let push_rels_assum assums =
   let open RelDecl in
-  push_rel_context (List.map (fun (x,t) -> LocalAssum (x,t)) assums)
+  push_rel_context (List.map (fun (x,r,t) -> LocalAssum (x,r,t)) assums)
 
-let push_named_rec_types (lna,typarray,_) env =
+let push_named_rec_types (lna,r,typarray,_) env =
   let open NamedDecl in
   let ctxt =
-    Array.map2_i
-      (fun i na t ->
+    Array.map3_i
+      (fun i na r t ->
 	 match na with
-	   | Name id -> LocalAssum (id, lift i t)
+           | Name id -> LocalAssum (id, r, lift i t)
 	   | Anonymous -> anomaly (Pp.str "Fix declarations must be named."))
-      lna typarray in
+      lna r typarray in
   Array.fold_left
     (fun e assum -> push_named assum e) env ctxt
 
@@ -516,12 +516,12 @@ let lookup_rel_id id sign =
   let rec lookrec n = function
     | [] ->
         raise Not_found
-    | (LocalAssum (Anonymous, _) | LocalDef (Anonymous,_,_)) :: l ->
+    | (LocalAssum (Anonymous, _, _) | LocalDef (Anonymous,_,_,_)) :: l ->
         lookrec (n + 1) l
-    | LocalAssum (Name id', t) :: l  ->
-        if Names.Id.equal id' id then (n,None,t)  else lookrec (n + 1) l
-    | LocalDef (Name id', b, t) :: l  ->
-        if Names.Id.equal id' id then (n,Some b,t) else lookrec (n + 1) l
+    | LocalAssum (Name id', r, t) :: l  ->
+        if Names.Id.equal id' id then (n,r,None,t)  else lookrec (n + 1) l
+    | LocalDef (Name id', r, b, t) :: l  ->
+        if Names.Id.equal id' id then (n,r,Some b,t) else lookrec (n + 1) l
   in
   lookrec 1 sign
 
@@ -532,11 +532,11 @@ let mkProd_wo_LetIn decl c =
   let open EConstr in
   let open RelDecl in
   match decl with
-    | LocalAssum (na,t) -> mkProd (na, t, c)
-    | LocalDef (_,b,_) -> Vars.subst1 b c
+    | LocalAssum (na,r,t) -> mkProd (na, r, t, c)
+    | LocalDef (_,_,b,_) -> Vars.subst1 b c
 
-let it_mkProd init = List.fold_left (fun c (n,t)  -> EConstr.mkProd (n, t, c)) init
-let it_mkLambda init = List.fold_left (fun c (n,t)  -> EConstr.mkLambda (n, t, c)) init
+let it_mkProd init = List.fold_left (fun c (n,r,t)  -> EConstr.mkProd (n, r, t, c)) init
+let it_mkLambda init = List.fold_left (fun c (n,r,t)  -> EConstr.mkLambda (n, r, t, c)) init
 
 let it_named_context_quantifier f ~init =
   List.fold_left (fun c d -> f d c) init
@@ -552,8 +552,8 @@ let it_mkLambda_or_LetIn_from_no_LetIn c decls =
   let open RelDecl in
   let rec aux k decls c = match decls with
   | [] -> c
-  | LocalDef (na,b,t) :: decls -> mkLetIn (na,b,t,aux (k-1) decls (liftn 1 k c))
-  | LocalAssum (na,t) :: decls -> mkLambda (na,t,aux (k-1) decls c)
+  | LocalDef (na,r,b,t) :: decls -> mkLetIn (na,r,b,t,aux (k-1) decls (liftn 1 k c))
+  | LocalAssum (na,r,t) :: decls -> mkLambda (na,r,t,aux (k-1) decls c)
   in aux (List.length decls) (List.rev decls) c
 
 (* *)
@@ -622,10 +622,10 @@ let adjust_app_array_size f1 l1 f2 l2 =
    time being almost those of the ML representation (except for
    (co-)fixpoint) *)
 
-let fold_rec_types g (lna,typarray,_) e =
+let fold_rec_types g (lna,r,typarray,_) e =
   let open EConstr in
   let open Vars in
-  let ctxt = Array.map2_i (fun i na t -> RelDecl.LocalAssum (na, lift i t)) lna typarray in
+  let ctxt = Array.map3_i (fun i na r t -> RelDecl.LocalAssum (na, r, lift i t)) lna r typarray in
   Array.fold_left (fun e assum -> g assum e) e ctxt
 
 let map_left2 f a g b =
@@ -651,22 +651,22 @@ let map_constr_with_binders_left_to_right sigma g f l c =
     let t' = f l t in
       if b' == b && t' == t then c
       else mkCast (b',k,t')
-  | Prod (na,t,b) ->
+  | Prod (na,r,t,b) ->
       let t' = f l t in
-      let b' = f (g (LocalAssum (na,t)) l) b in
+      let b' = f (g (LocalAssum (na,r,t)) l) b in
 	if t' == t && b' == b then c
-	else mkProd (na, t', b')
-  | Lambda (na,t,b) ->
+        else mkProd (na, r, t', b')
+  | Lambda (na,r,t,b) ->
       let t' = f l t in
-      let b' = f (g (LocalAssum (na,t)) l) b in
+      let b' = f (g (LocalAssum (na,r,t)) l) b in
 	if t' == t && b' == b then c
-	else mkLambda (na, t', b')
-  | LetIn (na,bo,t,b) ->
+        else mkLambda (na, r, t', b')
+  | LetIn (na,r,bo,t,b) ->
       let bo' = f l bo in
       let t' = f l t in
-      let b' = f (g (LocalDef (na,bo,t)) l) b in
+      let b' = f (g (LocalDef (na,r,bo,t)) l) b in
 	if bo' == bo && t' == t && b' == b then c
-	else mkLetIn (na, bo', t', b')	    
+        else mkLetIn (na, r, bo', t', b')
   | App (c,[||]) -> assert false
   | App (t,al) ->
       (*Special treatment to be able to recognize partially applied subterms*)
@@ -689,20 +689,20 @@ let map_constr_with_binders_left_to_right sigma g f l c =
       let b' = f l b in
       let p' = f l p in
       let bl' = Array.map_left (f l) bl in
-	if b' == b && p' == p && bl' == bl then c
+        if b' == b && p' == p && bl' == bl then c
 	else mkCase (ci, p', b', bl')
-  | Fix (ln,(lna,tl,bl as fx)) ->
+  | Fix (ln,(lna,r,tl,bl as fx)) ->
       let l' = fold_rec_types g fx l in
       let (tl', bl') = map_left2 (f l) tl (f l') bl in
 	if Array.for_all2 (==) tl tl' && Array.for_all2 (==) bl bl'
 	then c
-	else mkFix (ln,(lna,tl',bl'))
-  | CoFix(ln,(lna,tl,bl as fx)) ->
+        else mkFix (ln,(lna,r,tl',bl'))
+  | CoFix(ln,(lna,r,tl,bl as fx)) ->
       let l' = fold_rec_types g fx l in
       let (tl', bl') = map_left2 (f l) tl (f l') bl in
 	if Array.for_all2 (==) tl tl' && Array.for_all2 (==) bl bl'
 	then c
-	else mkCoFix (ln,(lna,tl',bl'))
+        else mkCoFix (ln,(lna,r,tl',bl'))
 
 (* strong *)
 let map_constr_with_full_binders sigma g f l cstr =
@@ -715,19 +715,19 @@ let map_constr_with_full_binders sigma g f l cstr =
       let c' = f l c in
       let t' = f l t in
       if c==c' && t==t' then cstr else mkCast (c', k, t')
-  | Prod (na,t,c) ->
+  | Prod (na,r,t,c) ->
       let t' = f l t in
-      let c' = f (g (LocalAssum (na, t)) l) c in
-      if t==t' && c==c' then cstr else mkProd (na, t', c')
-  | Lambda (na,t,c) ->
+      let c' = f (g (LocalAssum (na, r, t)) l) c in
+      if t==t' && c==c' then cstr else mkProd (na, r, t', c')
+  | Lambda (na,r,t,c) ->
       let t' = f l t in
-      let c' = f (g (LocalAssum (na, t)) l) c in
-      if t==t' && c==c' then cstr else  mkLambda (na, t', c')
-  | LetIn (na,b,t,c) ->
+      let c' = f (g (LocalAssum (na, r, t)) l) c in
+      if t==t' && c==c' then cstr else  mkLambda (na, r, t', c')
+  | LetIn (na,r,b,t,c) ->
       let b' = f l b in
       let t' = f l t in
-      let c' = f (g (LocalDef (na, b, t)) l) c in
-      if b==b' && t==t' && c==c' then cstr else mkLetIn (na, b', t', c')
+      let c' = f (g (LocalDef (na, r, b, t)) l) c in
+      if b==b' && t==t' && c==c' then cstr else mkLetIn (na, r, b', t', c')
   | App (c,al) ->
       let c' = f l c in
       let al' = Array.map (f l) al in
@@ -744,22 +744,22 @@ let map_constr_with_full_binders sigma g f l cstr =
       let bl' = Array.map (f l) bl in
       if p==p' && c==c' && Array.for_all2 (==) bl bl' then cstr else
         mkCase (ci, p', c', bl')
-  | Fix (ln,(lna,tl,bl)) ->
+  | Fix (ln,(lna,r,tl,bl)) ->
       let tl' = Array.map (f l) tl in
       let l' =
-        Array.fold_left2 (fun l na t -> g (LocalAssum (na, t)) l) l lna tl in
+        Array.fold_left3 (fun l na r t -> g (LocalAssum (na, r, t)) l) l lna r tl in
       let bl' = Array.map (f l') bl in
       if Array.for_all2 (==) tl tl' && Array.for_all2 (==) bl bl'
       then cstr
-      else mkFix (ln,(lna,tl',bl'))
-  | CoFix(ln,(lna,tl,bl)) ->
+      else mkFix (ln,(lna,r,tl',bl'))
+  | CoFix(ln,(lna,r,tl,bl)) ->
       let tl' = Array.map (f l) tl in
       let l' =
-        Array.fold_left2 (fun l na t -> g (LocalAssum (na, t)) l) l lna tl in
+        Array.fold_left3 (fun l na r t -> g (LocalAssum (na, r, t)) l) l lna r tl in
       let bl' = Array.map (f l') bl in
       if Array.for_all2 (==) tl tl' && Array.for_all2 (==) bl bl'
       then cstr
-      else mkCoFix (ln,(lna,tl',bl'))
+      else mkCoFix (ln,(lna,r,tl',bl'))
 
 (* [fold_constr_with_binders g f n acc c] folds [f n] on the immediate
    subterms of [c] starting from [acc] and proceeding from left to
@@ -775,19 +775,19 @@ let fold_constr_with_full_binders sigma g f n acc c =
   | (Rel _ | Meta _ | Var _   | Sort _ | Const _ | Ind _
     | Construct _) -> acc
   | Cast (c,_, t) -> f n (f n acc c) t
-  | Prod (na,t,c) -> f (g (LocalAssum (na, inj t)) n) (f n acc t) c
-  | Lambda (na,t,c) -> f (g (LocalAssum (na, inj t)) n) (f n acc t) c
-  | LetIn (na,b,t,c) -> f (g (LocalDef (na, inj b, inj t)) n) (f n (f n acc b) t) c
+  | Prod (na,r,t,c) -> f (g (LocalAssum (na, r, inj t)) n) (f n acc t) c
+  | Lambda (na,r,t,c) -> f (g (LocalAssum (na, r, inj t)) n) (f n acc t) c
+  | LetIn (na,r,b,t,c) -> f (g (LocalDef (na, r, inj b, inj t)) n) (f n (f n acc b) t) c
   | App (c,l) -> Array.fold_left (f n) (f n acc c) l
   | Proj (p,c) -> f n acc c
   | Evar (_,l) -> Array.fold_left (f n) acc l
   | Case (_,p,c,bl) -> Array.fold_left (f n) (f n (f n acc p) c) bl
-  | Fix (_,(lna,tl,bl)) ->
-      let n' = CArray.fold_left2 (fun c n t -> g (LocalAssum (n, inj t)) c) n lna tl in
+  | Fix (_,(lna,r,tl,bl)) ->
+      let n' = CArray.fold_left3 (fun c n r t -> g (LocalAssum (n, r, inj t)) c) n lna r tl in
       let fd = Array.map2 (fun t b -> (t,b)) tl bl in
       Array.fold_left (fun acc (t,b) -> f n' (f n acc t) b) acc fd
-  | CoFix (_,(lna,tl,bl)) ->
-      let n' = CArray.fold_left2 (fun c n t -> g (LocalAssum (n, inj t)) c) n lna tl in
+  | CoFix (_,(lna,r,tl,bl)) ->
+      let n' = CArray.fold_left3 (fun c n r t -> g (LocalAssum (n, r, inj t)) c) n lna r tl in
       let fd = Array.map2 (fun t b -> (t,b)) tl bl in
       Array.fold_left (fun acc (t,b) -> f n' (f n acc t) b) acc fd
 
@@ -805,19 +805,19 @@ let iter_constr_with_full_binders g f l c =
   | (Rel _ | Meta _ | Var _   | Sort _ | Const _ | Ind _
     | Construct _) -> ()
   | Cast (c,_, t) -> f l c; f l t
-  | Prod (na,t,c) -> f l t; f (g (LocalAssum (na,t)) l) c
-  | Lambda (na,t,c) -> f l t; f (g (LocalAssum (na,t)) l) c
-  | LetIn (na,b,t,c) -> f l b; f l t; f (g (LocalDef (na,b,t)) l) c
+  | Prod (na,r,t,c) -> f l t; f (g (LocalAssum (na,r,t)) l) c
+  | Lambda (na,r,t,c) -> f l t; f (g (LocalAssum (na,r,t)) l) c
+  | LetIn (na,r,b,t,c) -> f l b; f l t; f (g (LocalDef (na,r,b,t)) l) c
   | App (c,args) -> f l c; Array.iter (f l) args
   | Proj (p,c) -> f l c
   | Evar (_,args) -> Array.iter (f l) args
   | Case (_,p,c,bl) -> f l p; f l c; Array.iter (f l) bl
-  | Fix (_,(lna,tl,bl)) ->
-      let l' = Array.fold_left2 (fun l na t -> g (LocalAssum (na,t)) l) l lna tl in
+  | Fix (_,(lna,r,tl,bl)) ->
+      let l' = Array.fold_left3 (fun l na r t -> g (LocalAssum (na,r,t)) l) l lna r tl in
       Array.iter (f l) tl;
       Array.iter (f l') bl
-  | CoFix (_,(lna,tl,bl)) ->
-      let l' = Array.fold_left2 (fun l na t -> g (LocalAssum (na,t)) l) l lna tl in
+  | CoFix (_,(lna,r,tl,bl)) ->
+      let l' = Array.fold_left3 (fun l na r t -> g (LocalAssum (na,r,t)) l) l lna r tl in
       Array.iter (f l) tl;
       Array.iter (f l') bl
 
@@ -868,8 +868,8 @@ let occur_var env sigma id c =
 let occur_var_in_decl env sigma hyp decl =
   let open NamedDecl in
   match decl with
-    | LocalAssum (_,typ) -> occur_var env sigma hyp typ
-    | LocalDef (_, body, typ) ->
+    | LocalAssum (_,_,typ) -> occur_var env sigma hyp typ
+    | LocalDef (_, _, body, typ) ->
         occur_var env sigma hyp typ ||
         occur_var env sigma hyp body
 
@@ -946,8 +946,8 @@ let dependent_univs_no_evar sigma c t = dependent_main true true sigma c t
 let dependent_in_decl sigma a decl =
   let open NamedDecl in
   match decl with
-    | LocalAssum (_,t) -> dependent sigma a t
-    | LocalDef (_, body, t) -> dependent sigma a body || dependent sigma a t
+    | LocalAssum (_,_,t) -> dependent sigma a t
+    | LocalDef (_, _, body, t) -> dependent sigma a body || dependent sigma a t
 
 let count_occurrences sigma m t =
   let open EConstr in
@@ -1191,7 +1191,7 @@ let compare_constr_univ sigma f cv_pb t1 t2 =
   let open EConstr in
   match EConstr.kind sigma t1, EConstr.kind sigma t2 with
       Sort s1, Sort s2 -> base_sort_cmp cv_pb (ESorts.kind sigma s1) (ESorts.kind sigma s2)
-    | Prod (_,t1,c1), Prod (_,t2,c2) ->
+    | Prod (_,_,t1,c1), Prod (_,_,t2,c2) ->
 	f Reduction.CONV t1 t2 && f cv_pb c1 c2
     | Const (c, u), Const (c', u') -> Constant.equal c c'
     | Ind (i, _), Ind (i', _) -> eq_ind i i'
@@ -1241,9 +1241,9 @@ let filtering sigma env cv_pb c1 c2 =
           aux env cv_pb (applist (h1, p1)) (applist (h2, p2))
         | _ -> assert false
         end
-      | Prod (n,t1,c1), Prod (_,t2,c2) ->
+      | Prod (n,r,t1,c1), Prod (_,_,t2,c2) ->
 	  aux env cv_pb t1 t2;
-	  aux (RelDecl.LocalAssum (n,t1) :: env) cv_pb c1 c2
+          aux (RelDecl.LocalAssum (n,r,t1) :: env) cv_pb c1 c2
       | _, Evar (ev,_) -> define cv_pb env ev c1
       | Evar (ev,_), _ -> define cv_pb env ev c2
       | _ ->
@@ -1256,8 +1256,8 @@ let filtering sigma env cv_pb c1 c2 =
 
 let decompose_prod_letin sigma c =
   let rec prodec_rec i l c = match EConstr.kind sigma c with
-    | Prod (n,t,c)    -> prodec_rec (succ i) (RelDecl.LocalAssum (n,t)::l) c
-    | LetIn (n,d,t,c) -> prodec_rec (succ i) (RelDecl.LocalDef (n,d,t)::l) c
+    | Prod (n,r,t,c)    -> prodec_rec (succ i) (RelDecl.LocalAssum (n,r,t)::l) c
+    | LetIn (n,r,d,t,c) -> prodec_rec (succ i) (RelDecl.LocalDef (n,r,d,t)::l) c
     | Cast (c,_,_)    -> prodec_rec i l c
     | _               -> i,l,c in
   prodec_rec 0 [] c
@@ -1266,7 +1266,7 @@ let decompose_prod_letin sigma c =
  * gives n (casts are ignored) *)
 let nb_lam sigma c =
   let rec nbrec n c = match EConstr.kind sigma c with
-    | Lambda (_,_,c) -> nbrec (n+1) c
+    | Lambda (_,_,_,c) -> nbrec (n+1) c
     | Cast (c,_,_) -> nbrec n c
     | _ -> n
   in
@@ -1275,7 +1275,7 @@ let nb_lam sigma c =
 (* similar to nb_lam, but gives the number of products instead *)
 let nb_prod sigma c =
   let rec nbrec n c = match EConstr.kind sigma c with
-    | Prod (_,_,c) -> nbrec (n+1) c
+    | Prod (_,_,_,c) -> nbrec (n+1) c
     | Cast (c,_,_) -> nbrec n c
     | _ -> n
   in
@@ -1284,8 +1284,8 @@ let nb_prod sigma c =
 let nb_prod_modulo_zeta sigma x =
   let rec count n c =
     match EConstr.kind sigma c with
-        Prod(_,_,t) -> count (n+1) t
-      | LetIn(_,a,_,t) -> count n (EConstr.Vars.subst1 a t)
+        Prod(_,_,_,t) -> count (n+1) t
+      | LetIn(_,_,a,_,t) -> count n (EConstr.Vars.subst1 a t)
       | Cast(c,_,_) -> count n c
       | _ -> n
   in count 0 x
@@ -1305,7 +1305,7 @@ let rec eta_reduce_head sigma c =
   let open EConstr in
   let open Vars in
   match EConstr.kind sigma c with
-    | Lambda (_,c1,c') ->
+    | Lambda (_,_,c1,c') ->
 	(match EConstr.kind sigma (eta_reduce_head sigma c') with
            | App (f,cl) ->
                let lastn = (Array.length cl) - 1 in
@@ -1337,7 +1337,7 @@ let assums_of_rel_context sign =
     (fun decl l ->
       match decl with
       | RelDecl.LocalDef _ -> l
-      | RelDecl.LocalAssum (na,t) -> (na, t)::l)
+      | RelDecl.LocalAssum (na,r,t) -> (na, r, t)::l)
     sign ~init:[]
 
 let map_rel_context_in_env f env sign =
@@ -1366,7 +1366,7 @@ let smash_rel_context sign =
   let rec aux acc = function
   | [] -> acc
   | (RelDecl.LocalAssum _ as d) :: l -> aux (d::acc) l
-  | RelDecl.LocalDef (_,b,_) :: l ->
+  | RelDecl.LocalDef (_,_,b,_) :: l ->
       (* Quadratic in the number of let but there are probably a few of them *)
       aux (List.rev (substl_rel_context [b] (List.rev acc))) l
   in List.rev (aux [] sign)
@@ -1377,39 +1377,39 @@ let mem_named_context_val id ctxt =
   try ignore(Environ.lookup_named_val id ctxt); true with Not_found -> false
 
 let map_rel_decl f = function
-| RelDecl.LocalAssum (id, t) -> RelDecl.LocalAssum (id, f t)
-| RelDecl.LocalDef (id, b, t) -> RelDecl.LocalDef (id, f b, f t)
+| RelDecl.LocalAssum (id, r, t) -> RelDecl.LocalAssum (id, r, f t)
+| RelDecl.LocalDef (id, r, b, t) -> RelDecl.LocalDef (id, r, f b, f t)
 
 let map_named_decl f = function
-| NamedDecl.LocalAssum (id, t) -> NamedDecl.LocalAssum (id, f t)
-| NamedDecl.LocalDef (id, b, t) -> NamedDecl.LocalDef (id, f b, f t)
+| NamedDecl.LocalAssum (id, r, t) -> NamedDecl.LocalAssum (id, r, f t)
+| NamedDecl.LocalDef (id, r, b, t) -> NamedDecl.LocalDef (id, r, f b, f t)
 
 let compact_named_context sign =
   let compact l decl =
     match decl, l with
-    | NamedDecl.LocalAssum (i,t), [] ->
-       [CompactedDecl.LocalAssum ([i],t)]
-    | NamedDecl.LocalDef (i,c,t), [] ->
-       [CompactedDecl.LocalDef ([i],c,t)]
-    | NamedDecl.LocalAssum (i1,t1), CompactedDecl.LocalAssum (li,t2) :: q ->
+    | NamedDecl.LocalAssum (i,r,t), [] ->
+       [CompactedDecl.LocalAssum ([i,r],t)]
+    | NamedDecl.LocalDef (i,r,c,t), [] ->
+       [CompactedDecl.LocalDef ([i,r],c,t)]
+    | NamedDecl.LocalAssum (i1,r,t1), CompactedDecl.LocalAssum (li,t2) :: q ->
        if Constr.equal t1 t2
-       then CompactedDecl.LocalAssum (i1::li, t2) :: q
-       else CompactedDecl.LocalAssum ([i1],t1) :: CompactedDecl.LocalAssum (li,t2) :: q
-    | NamedDecl.LocalDef (i1,c1,t1), CompactedDecl.LocalDef (li,c2,t2) :: q ->
+       then CompactedDecl.LocalAssum ((i1,r)::li, t2) :: q
+       else CompactedDecl.LocalAssum ([i1,r],t1) :: CompactedDecl.LocalAssum (li,t2) :: q
+    | NamedDecl.LocalDef (i1,r,c1,t1), CompactedDecl.LocalDef (li,c2,t2) :: q ->
        if Constr.equal c1 c2 && Constr.equal t1 t2
-       then CompactedDecl.LocalDef (i1::li, c2, t2) :: q
-       else CompactedDecl.LocalDef ([i1],c1,t1) :: CompactedDecl.LocalDef (li,c2,t2) :: q
-    | NamedDecl.LocalAssum (i,t), q ->
-       CompactedDecl.LocalAssum ([i],t) :: q
-    | NamedDecl.LocalDef (i,c,t), q ->
-       CompactedDecl.LocalDef ([i],c,t) :: q
+       then CompactedDecl.LocalDef ((i1,r)::li, c2, t2) :: q
+       else CompactedDecl.LocalDef ([i1,r],c1,t1) :: CompactedDecl.LocalDef (li,c2,t2) :: q
+    | NamedDecl.LocalAssum (i,r,t), q ->
+       CompactedDecl.LocalAssum ([i,r],t) :: q
+    | NamedDecl.LocalDef (i,r,c,t), q ->
+       CompactedDecl.LocalDef ([i,r],c,t) :: q
   in
   sign |> Context.Named.fold_inside compact ~init:[] |> List.rev
 
 let clear_named_body id env =
   let open NamedDecl in
   let aux _ = function
-  | LocalDef (id',c,t) when Id.equal id id' -> push_named (LocalAssum (id,t))
+  | LocalDef (id',r,c,t) when Id.equal id id' -> push_named (LocalAssum (id,r,t))
   | d -> push_named d in
   fold_named_context aux env ~init:(reset_context env)
 
@@ -1427,8 +1427,8 @@ let global_vars_set env sigma constr =
 let global_vars env sigma ids = Id.Set.elements (global_vars_set env sigma ids)
 
 let global_vars_set_of_decl env sigma = function
-  | NamedDecl.LocalAssum (_,t) -> global_vars_set env sigma t
-  | NamedDecl.LocalDef (_,c,t) ->
+  | NamedDecl.LocalAssum (_,_,t) -> global_vars_set env sigma t
+  | NamedDecl.LocalDef (_,_,c,t) ->
       Id.Set.union (global_vars_set env sigma t)
         (global_vars_set env sigma c)
 
@@ -1460,7 +1460,7 @@ let prod_applist sigma c l =
   let open EConstr in
   let rec app subst c l =
     match EConstr.kind sigma c, l with
-    | Prod(_,_,c), arg::l -> app (arg::subst) c l
+    | Prod(_,_,_,c), arg::l -> app (arg::subst) c l
     | _, [] -> Vars.substl subst c
     | _ -> anomaly (Pp.str "Not enough prod's.") in
   app [] c l
@@ -1472,8 +1472,8 @@ let prod_applist_assum sigma n c l =
       if l == [] then Vars.substl subst c
       else anomaly (Pp.str "Not enough arguments.")
     else match EConstr.kind sigma c, l with
-    | Prod(_,_,c), arg::l -> app (n-1) (arg::subst) c l
-    | LetIn(_,b,_,c), _ -> app (n-1) (Vars.substl subst b::subst) c l
+    | Prod(_,_,_,c), arg::l -> app (n-1) (arg::subst) c l
+    | LetIn(_,_,b,_,c), _ -> app (n-1) (Vars.substl subst b::subst) c l
     | _ -> anomaly (Pp.str "Not enough prod/let's.") in
   app n [] c l
 

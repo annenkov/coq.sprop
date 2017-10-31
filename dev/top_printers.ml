@@ -243,6 +243,10 @@ let cast_kind_display k =
   | REVERTcast -> "REVERTcast"
   | NATIVEcast -> "NATIVEcast"
 
+let relevance_display = function
+  | Sorts.Relevant -> "relevant"
+  | Sorts.Irrelevant -> "irrelevance"
+
 let constr_display csr =
   let rec term_display c = match kind c with
   | Rel n -> "Rel("^(string_of_int n)^")"
@@ -251,12 +255,12 @@ let constr_display csr =
   | Sort s -> "Sort("^(sort_display s)^")"
   | Cast (c,k, t) ->
       "Cast("^(term_display c)^","^(cast_kind_display k)^","^(term_display t)^")"
-  | Prod (na,t,c) ->
-      "Prod("^(name_display na)^","^(term_display t)^","^(term_display c)^")\n"
-  | Lambda (na,t,c) ->
-      "Lambda("^(name_display na)^","^(term_display t)^","^(term_display c)^")\n"
-  | LetIn (na,b,t,c) ->
-      "LetIn("^(name_display na)^","^(term_display b)^","
+  | Prod (na,r,t,c) ->
+      "Prod("^(name_display na)^","^(relevance_display r)^","^(term_display t)^","^(term_display c)^")\n"
+  | Lambda (na,r,t,c) ->
+      "Lambda("^(name_display na)^","^(relevance_display r)^","^(term_display t)^","^(term_display c)^")\n"
+  | LetIn (na,r,b,t,c) ->
+      "LetIn("^(name_display na)^","^(relevance_display r)^","^(term_display b)^","
       ^(term_display t)^","^(term_display c)^")"
   | App (c,l) -> "App("^(term_display c)^","^(array_display l)^")\n"
   | Evar (e,l) -> "Evar("^(Pp.string_of_ppcmds (Evar.print e))^","^(array_display l)^")"
@@ -270,14 +274,14 @@ let constr_display csr =
   | Case (ci,p,c,bl) ->
       "MutCase(<abs>,"^(term_display p)^","^(term_display c)^","
       ^(array_display bl)^")"
-  | Fix ((t,i),(lna,tl,bl)) ->
+  | Fix ((t,i),(lna,rl,tl,bl)) ->
       "Fix(([|"^(Array.fold_right (fun x i -> (string_of_int x)^(if not(i="")
         then (";"^i) else "")) t "")^"|],"^(string_of_int i)^"),"
       ^(array_display tl)^",[|"
       ^(Array.fold_right (fun x i -> (name_display x)^(if not(i="")
         then (";"^i) else "")) lna "")^"|],"
       ^(array_display bl)^")"
-  | CoFix(i,(lna,tl,bl)) ->
+  | CoFix(i,(lna,rl,tl,bl)) ->
       "CoFix("^(string_of_int i)^"),"
       ^(array_display tl)^","
       ^(Array.fold_right (fun x i -> (name_display x)^(if not(i="")
@@ -325,20 +329,20 @@ let print_pure_constr csr =
   | Cast (c,_, t) -> open_hovbox 1;
       print_string "("; (term_display c); print_cut();
       print_string "::"; (term_display t); print_string ")"; close_box()
-  | Prod (Name(id),t,c) ->
+  | Prod (Name(id),_,t,c) ->
       open_hovbox 1;
       print_string"("; print_string (Id.to_string id);
       print_string ":"; box_display t;
       print_string ")"; print_cut();
       box_display c; close_box()
-  | Prod (Anonymous,t,c) ->
+  | Prod (Anonymous,_,t,c) ->
       print_string"("; box_display t; print_cut(); print_string "->";
       box_display c; print_string ")";
-  | Lambda (na,t,c) ->
+  | Lambda (na,_,t,c) ->
       print_string "["; name_display na;
       print_string ":"; box_display t; print_string "]";
       print_cut(); box_display c;
-  | LetIn (na,b,t,c) ->
+  | LetIn (na,_,b,t,c) ->
       print_string "["; name_display na; print_string "=";
       box_display b; print_cut();
       print_string ":"; box_display t; print_string "]";
@@ -384,7 +388,7 @@ let print_pure_constr csr =
       print_cut();
       print_string "end";
       close_box()
-  | Fix ((t,i),(lna,tl,bl)) ->
+  | Fix ((t,i),(lna,rl,tl,bl)) ->
       print_string "Fix("; print_int i; print_string ")";
       print_cut();
       open_vbox 0;
@@ -398,7 +402,7 @@ let print_pure_constr csr =
 	  print_cut()
         done
       in print_string"{"; print_fix(); print_string"}"
-  | CoFix(i,(lna,tl,bl)) ->
+  | CoFix(i,(lna,rl,tl,bl)) ->
       print_string "CoFix("; print_int i; print_string ")";
       print_cut();
       open_vbox 0;

@@ -164,9 +164,9 @@ let mkMeta n = of_kind (Meta n)
 let mkEvar e = of_kind (Evar e)
 let mkSort s = of_kind (Sort (ESorts.make s))
 let mkCast (b, k, t) = of_kind (Cast (b, k, t))
-let mkProd (na, t, u) = of_kind (Prod (na, t, u))
-let mkLambda (na, t, c) = of_kind (Lambda (na, t, c))
-let mkLetIn (na, b, t, c) = of_kind (LetIn (na, b, t, c))
+let mkProd (na, r, t, u) = of_kind (Prod (na, r, t, u))
+let mkLambda (na, r, t, c) = of_kind (Lambda (na, r, t, c))
+let mkLetIn (na, r, b, t, c) = of_kind (LetIn (na, r, b, t, c))
 let mkApp (f, arg) = of_kind (App (f, arg))
 let mkConstU pc = of_kind (Const pc)
 let mkConst c = of_kind (Const (in_punivs c))
@@ -179,7 +179,7 @@ let mkCase (ci, c, r, p) = of_kind (Case (ci, c, r, p))
 let mkFix f = of_kind (Fix f)
 let mkCoFix f = of_kind (CoFix f)
 let mkProj (p, c) = of_kind (Proj (p, c))
-let mkArrow t1 t2 = of_kind (Prod (Anonymous, t1, t2))
+let mkArrow t1 r t2 = of_kind (Prod (Anonymous, r, t1, t2))
 
 let type1 = mkSort Sorts.type1
 
@@ -240,15 +240,15 @@ let destApp sigma c = match kind sigma c with
 | _ -> raise DestKO
 
 let destLambda sigma c = match kind sigma c with
-| Lambda (na, t, c) -> (na, t, c)
+| Lambda (na, r, t, c) -> (na, r, t, c)
 | _ -> raise DestKO
 
 let destLetIn sigma c = match kind sigma c with
-| LetIn (na, b, t, c) -> (na, b, t, c)
+| LetIn (na, r, b, t, c) -> (na, r, b, t, c)
 | _ -> raise DestKO
 
 let destProd sigma c = match kind sigma c with
-| Prod (na, t, c) -> (na, t, c)
+| Prod (na, r, t, c) -> (na, r, t, c)
 | _ -> raise DestKO
 
 let destConst sigma c = match kind sigma c with
@@ -282,7 +282,7 @@ let decompose_app sigma c =
 
 let decompose_lam sigma c =
   let rec lamdec_rec l c = match kind sigma c with
-    | Lambda (x,t,c) -> lamdec_rec ((x,t)::l) c
+    | Lambda (x,r,t,c) -> lamdec_rec ((x,r,t)::l) c
     | Cast (c,_,_)     -> lamdec_rec l c
     | _                -> l,c
   in
@@ -292,8 +292,8 @@ let decompose_lam_assum sigma c =
   let open Rel.Declaration in
   let rec lamdec_rec l c =
     match kind sigma c with
-    | Lambda (x,t,c)  -> lamdec_rec (Context.Rel.add (LocalAssum (x,t)) l) c
-    | LetIn (x,b,t,c) -> lamdec_rec (Context.Rel.add (LocalDef (x,b,t)) l) c
+    | Lambda (x,r,t,c)  -> lamdec_rec (Context.Rel.add (LocalAssum (x,r,t)) l) c
+    | LetIn (x,r,b,t,c) -> lamdec_rec (Context.Rel.add (LocalDef (x,r,b,t)) l) c
     | Cast (c,_,_)      -> lamdec_rec l c
     | _               -> l,c
   in
@@ -307,8 +307,8 @@ let decompose_lam_n_assum sigma n c =
     if Int.equal n 0 then l,c
     else
       match kind sigma c with
-      | Lambda (x,t,c)  -> lamdec_rec (Context.Rel.add (LocalAssum (x,t)) l) (n-1) c
-      | LetIn (x,b,t,c) -> lamdec_rec (Context.Rel.add (LocalDef (x,b,t)) l) n c
+      | Lambda (x,r,t,c)  -> lamdec_rec (Context.Rel.add (LocalAssum (x,r,t)) l) (n-1) c
+      | LetIn (x,r,b,t,c) -> lamdec_rec (Context.Rel.add (LocalDef (x,r,b,t)) l) n c
       | Cast (c,_,_)      -> lamdec_rec l n c
       | c -> user_err Pp.(str "decompose_lam_n_assum: not enough abstractions")
   in
@@ -322,8 +322,8 @@ let decompose_lam_n_decls sigma n =
     if Int.equal n 0 then l,c
     else
       match kind sigma c with
-      | Lambda (x,t,c)  -> lamdec_rec (Context.Rel.add (LocalAssum (x,t)) l) (n-1) c
-      | LetIn (x,b,t,c) -> lamdec_rec (Context.Rel.add (LocalDef (x,b,t)) l) (n-1) c
+      | Lambda (x,r,t,c)  -> lamdec_rec (Context.Rel.add (LocalAssum (x,r,t)) l) (n-1) c
+      | LetIn (x,r,b,t,c) -> lamdec_rec (Context.Rel.add (LocalDef (x,r,b,t)) l) (n-1) c
       | Cast (c,_,_)      -> lamdec_rec l n c
       | c -> user_err Pp.(str "decompose_lam_n_decls: not enough abstractions")
   in
@@ -332,7 +332,7 @@ let decompose_lam_n_decls sigma n =
 let lamn n env b =
   let rec lamrec = function
     | (0, env, b)        -> b
-    | (n, ((v,t)::l), b) -> lamrec (n-1,  l, mkLambda (v,t,b))
+    | (n, ((v,r,t)::l), b) -> lamrec (n-1,  l, mkLambda (v,r,t,b))
     | _ -> assert false
   in
   lamrec (n,env,b)
@@ -344,13 +344,13 @@ let rec to_lambda sigma n prod =
     prod
   else
     match kind sigma prod with
-      | Prod (na,ty,bd) -> mkLambda (na,ty,to_lambda sigma (n-1) bd)
+      | Prod (na,r,ty,bd) -> mkLambda (na,r,ty,to_lambda sigma (n-1) bd)
       | Cast (c,_,_) -> to_lambda sigma n c
       | _   -> user_err ~hdr:"to_lambda" (Pp.mt ())
 
 let decompose_prod sigma c =
   let rec proddec_rec l c = match kind sigma c with
-    | Prod (x,t,c) -> proddec_rec ((x,t)::l) c
+    | Prod (x,r,t,c) -> proddec_rec ((x,r,t)::l) c
     | Cast (c,_,_)     -> proddec_rec l c
     | _                -> l,c
   in
@@ -360,8 +360,8 @@ let decompose_prod_assum sigma c =
   let open Rel.Declaration in
   let rec proddec_rec l c =
     match kind sigma c with
-    | Prod (x,t,c)  -> proddec_rec (Context.Rel.add (LocalAssum (x,t)) l) c
-    | LetIn (x,b,t,c) -> proddec_rec (Context.Rel.add (LocalDef (x,b,t)) l) c
+    | Prod (x,r,t,c)  -> proddec_rec (Context.Rel.add (LocalAssum (x,r,t)) l) c
+    | LetIn (x,r,b,t,c) -> proddec_rec (Context.Rel.add (LocalDef (x,r,b,t)) l) c
     | Cast (c,_,_)      -> proddec_rec l c
     | _               -> l,c
   in
@@ -375,8 +375,8 @@ let decompose_prod_n_assum sigma n c =
     if Int.equal n 0 then l,c
     else
       match kind sigma c with
-      | Prod (x,t,c)    -> prodec_rec (Context.Rel.add (LocalAssum (x,t)) l) (n-1) c
-      | LetIn (x,b,t,c) -> prodec_rec (Context.Rel.add (LocalDef (x,b,t)) l) (n-1) c
+      | Prod (x,r,t,c)    -> prodec_rec (Context.Rel.add (LocalAssum (x,r,t)) l) (n-1) c
+      | LetIn (x,r,b,t,c) -> prodec_rec (Context.Rel.add (LocalDef (x,r,b,t)) l) (n-1) c
       | Cast (c,_,_)      -> prodec_rec l n c
       | c -> user_err Pp.(str "decompose_prod_n_assum: not enough assumptions")
   in
@@ -393,22 +393,22 @@ let map sigma f c = match kind sigma c with
       let t' = f t in
       if b'==b && t' == t then c
       else mkCast (b', k, t')
-  | Prod (na,t,b) ->
+  | Prod (na,r,t,b) ->
       let b' = f b in
       let t' = f t in
       if b'==b && t' == t then c
-      else mkProd (na, t', b')
-  | Lambda (na,t,b) ->
+      else mkProd (na, r, t', b')
+  | Lambda (na,r,t,b) ->
       let b' = f b in
       let t' = f t in
       if b'==b && t' == t then c
-      else mkLambda (na, t', b')
-  | LetIn (na,b,t,k) ->
+      else mkLambda (na, r, t', b')
+  | LetIn (na,r,b,t,k) ->
       let b' = f b in
       let t' = f t in
       let k' = f k in
       if b'==b && t' == t && k'==k then c
-      else mkLetIn (na, b', t', k')
+      else mkLetIn (na, r, b', t', k')
   | App (b,l) ->
       let b' = f b in
       let l' = Array.smartmap f l in
@@ -428,16 +428,16 @@ let map sigma f c = match kind sigma c with
       let bl' = Array.smartmap f bl in
       if b'==b && p'==p && bl'==bl then c
       else mkCase (ci, p', b', bl')
-  | Fix (ln,(lna,tl,bl)) ->
+  | Fix (ln,(lna,r,tl,bl)) ->
       let tl' = Array.smartmap f tl in
       let bl' = Array.smartmap f bl in
       if tl'==tl && bl'==bl then c
-      else mkFix (ln,(lna,tl',bl'))
-  | CoFix(ln,(lna,tl,bl)) ->
+      else mkFix (ln,(lna,r,tl',bl'))
+  | CoFix(ln,(lna,r,tl,bl)) ->
       let tl' = Array.smartmap f tl in
       let bl' = Array.smartmap f bl in
       if tl'==tl && bl'==bl then c
-      else mkCoFix (ln,(lna,tl',bl'))
+      else mkCoFix (ln,(lna,r,tl',bl'))
 
 let map_with_binders sigma g f l c0 = match kind sigma c0 with
   | (Rel _ | Meta _ | Var _   | Sort _ | Const _ | Ind _
@@ -447,22 +447,22 @@ let map_with_binders sigma g f l c0 = match kind sigma c0 with
     let t' = f l t in
     if c' == c && t' == t then c0
     else mkCast (c', k, t')
-  | Prod (na, t, c) ->
+  | Prod (na, r, t, c) ->
     let t' = f l t in
     let c' = f (g l) c in
     if t' == t && c' == c then c0
-    else mkProd (na, t', c')
-  | Lambda (na, t, c) ->
+    else mkProd (na, r, t', c')
+  | Lambda (na, r, t, c) ->
     let t' = f l t in
     let c' = f (g l) c in
     if t' == t && c' == c then c0
-    else mkLambda (na, t', c')
-  | LetIn (na, b, t, c) ->
+    else mkLambda (na, r, t', c')
+  | LetIn (na, r, b, t, c) ->
     let b' = f l b in
     let t' = f l t in
     let c' = f (g l) c in
     if b' == b && t' == t && c' == c then c0
-    else mkLetIn (na, b', t', c')
+    else mkLetIn (na, r, b', t', c')
   | App (c, al) ->
     let c' = f l c in
     let al' = CArray.Fun1.smartmap f l al in
@@ -482,31 +482,31 @@ let map_with_binders sigma g f l c0 = match kind sigma c0 with
     let bl' = CArray.Fun1.smartmap f l bl in
     if p' == p && c' == c && bl' == bl then c0
     else mkCase (ci, p', c', bl')
-  | Fix (ln, (lna, tl, bl)) ->
+  | Fix (ln, (lna, r, tl, bl)) ->
     let tl' = CArray.Fun1.smartmap f l tl in
     let l' = iterate g (Array.length tl) l in
     let bl' = CArray.Fun1.smartmap f l' bl in
     if tl' == tl && bl' == bl then c0
-    else mkFix (ln,(lna,tl',bl'))
-  | CoFix(ln,(lna,tl,bl)) ->
+    else mkFix (ln,(lna,r,tl',bl'))
+  | CoFix(ln,(lna,r,tl,bl)) ->
     let tl' = CArray.Fun1.smartmap f l tl in
     let l' = iterate g (Array.length tl) l in
     let bl' = CArray.Fun1.smartmap f l' bl in
-    mkCoFix (ln,(lna,tl',bl'))
+    mkCoFix (ln,(lna,r,tl',bl'))
 
 let iter sigma f c = match kind sigma c with
   | (Rel _ | Meta _ | Var _   | Sort _ | Const _ | Ind _
     | Construct _) -> ()
   | Cast (c,_,t) -> f c; f t
-  | Prod (_,t,c) -> f t; f c
-  | Lambda (_,t,c) -> f t; f c
-  | LetIn (_,b,t,c) -> f b; f t; f c
+  | Prod (_,_,t,c) -> f t; f c
+  | Lambda (_,_,t,c) -> f t; f c
+  | LetIn (_,_,b,t,c) -> f b; f t; f c
   | App (c,l) -> f c; Array.iter f l
   | Proj (p,c) -> f c
   | Evar (_,l) -> Array.iter f l
   | Case (_,p,c,bl) -> f p; f c; Array.iter f bl
-  | Fix (_,(_,tl,bl)) -> Array.iter f tl; Array.iter f bl
-  | CoFix (_,(_,tl,bl)) -> Array.iter f tl; Array.iter f bl
+  | Fix (_,(_,_,tl,bl)) -> Array.iter f tl; Array.iter f bl
+  | CoFix (_,(_,_,tl,bl)) -> Array.iter f tl; Array.iter f bl
 
 let iter_with_full_binders sigma g f n c =
   let open Context.Rel.Declaration in
@@ -514,20 +514,20 @@ let iter_with_full_binders sigma g f n c =
   | (Rel _ | Meta _ | Var _   | Sort _ | Const _ | Ind _
     | Construct _) -> ()
   | Cast (c,_,t) -> f n c; f n t
-  | Prod (na,t,c) -> f n t; f (g (LocalAssum (na, t)) n) c
-  | Lambda (na,t,c) -> f n t; f (g (LocalAssum (na, t)) n) c
-  | LetIn (na,b,t,c) -> f n b; f n t; f (g (LocalDef (na, b, t)) n) c
+  | Prod (na,r,t,c) -> f n t; f (g (LocalAssum (na, r, t)) n) c
+  | Lambda (na,r,t,c) -> f n t; f (g (LocalAssum (na, r, t)) n) c
+  | LetIn (na,r,b,t,c) -> f n b; f n t; f (g (LocalDef (na, r, b, t)) n) c
   | App (c,l) -> f n c; CArray.Fun1.iter f n l
   | Evar (_,l) -> CArray.Fun1.iter f n l
   | Case (_,p,c,bl) -> f n p; f n c; CArray.Fun1.iter f n bl
   | Proj (p,c) -> f n c
-  | Fix (_,(lna,tl,bl)) ->
+  | Fix (_,(lna,r,tl,bl)) ->
     Array.iter (f n) tl;
-    let n' = Array.fold_left2 (fun n na t -> g (LocalAssum (na,t)) n) n lna tl in
+    let n' = Array.fold_left3 (fun n na r t -> g (LocalAssum (na,r,t)) n) n lna r tl in
     Array.iter (f n') bl
-  | CoFix (_,(lna,tl,bl)) ->
+  | CoFix (_,(lna,r,tl,bl)) ->
     Array.iter (f n) tl;
-    let n' = Array.fold_left2 (fun n na t -> g (LocalAssum (na,t)) n) n lna tl in
+    let n' = Array.fold_left3 (fun n na r t -> g (LocalAssum (na,r,t)) n) n lna r tl in
     Array.iter (f n') bl
 
 let iter_with_binders sigma g f n c =
@@ -537,16 +537,16 @@ let fold sigma f acc c = match kind sigma c with
   | (Rel _ | Meta _ | Var _   | Sort _ | Const _ | Ind _
     | Construct _) -> acc
   | Cast (c,_,t) -> f (f acc c) t
-  | Prod (_,t,c) -> f (f acc t) c
-  | Lambda (_,t,c) -> f (f acc t) c
-  | LetIn (_,b,t,c) -> f (f (f acc b) t) c
+  | Prod (_,_,t,c) -> f (f acc t) c
+  | Lambda (_,_,t,c) -> f (f acc t) c
+  | LetIn (_,_,b,t,c) -> f (f (f acc b) t) c
   | App (c,l) -> Array.fold_left f (f acc c) l
   | Proj (p,c) -> f acc c
   | Evar (_,l) -> Array.fold_left f acc l
   | Case (_,p,c,bl) -> Array.fold_left f (f (f acc p) c) bl
-  | Fix (_,(lna,tl,bl)) ->
+  | Fix (_,(lna,_,tl,bl)) ->
     Array.fold_left2 (fun acc t b -> f (f acc t) b) acc tl bl
-  | CoFix (_,(lna,tl,bl)) ->
+  | CoFix (_,(lna,_,tl,bl)) ->
     Array.fold_left2 (fun acc t b -> f (f acc t) b) acc tl bl
 
 let compare_gen k eq_inst eq_sort eq_constr c1 c2 =
@@ -771,8 +771,8 @@ end
 
 let rec isArity sigma c =
   match kind sigma c with
-  | Prod (_,_,c)    -> isArity sigma c
-  | LetIn (_,b,_,c) -> isArity sigma (Vars.subst1 b c)
+  | Prod (_,_,_,c)    -> isArity sigma c
+  | LetIn (_,_,b,_,c) -> isArity sigma (Vars.subst1 b c)
   | Cast (c,_,_)      -> isArity sigma c
   | Sort _          -> true
   | _               -> false
@@ -783,8 +783,8 @@ let destArity sigma =
   let open Context.Rel.Declaration in
   let rec prodec_rec l c =
     match kind sigma c with
-    | Prod (x,t,c)    -> prodec_rec (LocalAssum (x,t) :: l) c
-    | LetIn (x,b,t,c) -> prodec_rec (LocalDef (x,b,t) :: l) c
+    | Prod (x,r,t,c)    -> prodec_rec (LocalAssum (x,r,t) :: l) c
+    | LetIn (x,r,b,t,c) -> prodec_rec (LocalDef (x,r,b,t) :: l) c
     | Cast (c,_,_)      -> prodec_rec l c
     | Sort s          -> l,s
     | _               -> anomaly ~label:"destArity" (Pp.str "not an arity.")
@@ -794,30 +794,30 @@ let destArity sigma =
 let mkProd_or_LetIn decl c =
   let open Context.Rel.Declaration in
   match decl with
-  | LocalAssum (na,t) -> mkProd (na, t, c)
-  | LocalDef (na,b,t) -> mkLetIn (na, b, t, c)
+  | LocalAssum (na,r,t) -> mkProd (na, r, t, c)
+  | LocalDef (na,r,b,t) -> mkLetIn (na, r, b, t, c)
 
 let mkLambda_or_LetIn decl c =
   let open Context.Rel.Declaration in
   match decl with
-  | LocalAssum (na,t) -> mkLambda (na, t, c)
-  | LocalDef (na,b,t) -> mkLetIn (na, b, t, c)
+  | LocalAssum (na,r,t) -> mkLambda (na, r, t, c)
+  | LocalDef (na,r,b,t) -> mkLetIn (na, r, b, t, c)
 
-let mkNamedProd id typ c = mkProd (Name id, typ, Vars.subst_var id c)
-let mkNamedLambda id typ c = mkLambda (Name id, typ, Vars.subst_var id c)
-let mkNamedLetIn id c1 t c2 = mkLetIn (Name id, c1, t, Vars.subst_var id c2)
+let mkNamedProd id r typ c = mkProd (Name id, r, typ, Vars.subst_var id c)
+let mkNamedLambda id r typ c = mkLambda (Name id, r, typ, Vars.subst_var id c)
+let mkNamedLetIn id r c1 t c2 = mkLetIn (Name id, r, c1, t, Vars.subst_var id c2)
 
 let mkNamedProd_or_LetIn decl c =
   let open Context.Named.Declaration in
   match decl with
-    | LocalAssum (id,t) -> mkNamedProd id t c
-    | LocalDef (id,b,t) -> mkNamedLetIn id b t c
+    | LocalAssum (id,r,t) -> mkNamedProd id r t c
+    | LocalDef (id,r,b,t) -> mkNamedLetIn id r b t c
 
 let mkNamedLambda_or_LetIn decl c =
   let open Context.Named.Declaration in
   match decl with
-    | LocalAssum (id,t) -> mkNamedLambda id t c
-    | LocalDef (id,b,t) -> mkNamedLetIn id b t c
+    | LocalAssum (id,r,t) -> mkNamedLambda id r t c
+    | LocalDef (id,r,b,t) -> mkNamedLetIn id r b t c
 
 let it_mkProd_or_LetIn t ctx = List.fold_left (fun c d -> mkProd_or_LetIn d c) t ctx
 let it_mkLambda_or_LetIn t ctx = List.fold_left (fun c d -> mkLambda_or_LetIn d c) t ctx

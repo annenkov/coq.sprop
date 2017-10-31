@@ -184,7 +184,7 @@ let eval_table = Summary.ref (Cmap.empty : frozen) ~name:"evaluation"
    the xp..x1.
 *)
 
-let check_fix_reversibility sigma labs args ((lv,i),(_,tys,bds)) =
+let check_fix_reversibility sigma labs args ((lv,i),(_,_,tys,bds)) =
   let n = List.length labs in
   let nargs = List.length args in
   if nargs > n then raise Elimconst;
@@ -247,7 +247,7 @@ let invert_name labs l na0 env sigma ref = function
 		| Some c ->
 		    let labs',ccl = decompose_lam sigma c in
 		    let _, l' = whd_betalet_stack sigma ccl in
-		    let labs' = List.map snd labs' in
+                    let labs' = List.map pi3 labs' in
 		    (** ppedrot: there used to be generic equality on terms here *)
                     let eq_constr c1 c2 = EConstr.eq_constr sigma c1 c2 in
 		    if List.equal eq_constr labs' labs &&
@@ -265,9 +265,9 @@ let compute_consteval_direct env sigma ref =
   let rec srec env n labs onlyproj c =
     let c',l = whd_betadeltazeta_stack env sigma c in
     match EConstr.kind sigma c' with
-      | Lambda (id,t,g) when List.is_empty l && not onlyproj ->
+      | Lambda (id,r,t,g) when List.is_empty l && not onlyproj ->
           let open Context.Rel.Declaration in
-	  srec (push_rel (LocalAssum (id,t)) env) (n+1) (t::labs) onlyproj g
+          srec (push_rel (LocalAssum (id,r,t)) env) (n+1) (t::labs) onlyproj g
       | Fix fix when not onlyproj ->
 	  (try check_fix_reversibility sigma labs l fix
 	  with Elimconst -> NotAnElimination)
@@ -285,10 +285,10 @@ let compute_consteval_mutual_fix env sigma ref =
     let c',l = whd_betalet_stack sigma c in
     let nargs = List.length l in
     match EConstr.kind sigma c' with
-      | Lambda (na,t,g) when List.is_empty l ->
+      | Lambda (na,r,t,g) when List.is_empty l ->
           let open Context.Rel.Declaration in
-	  srec (push_rel (LocalAssum (na,t)) env) (minarg+1) (t::labs) ref g
-      | Fix ((lv,i),(names,_,_)) ->
+          srec (push_rel (LocalAssum (na,r,t)) env) (minarg+1) (t::labs) ref g
+      | Fix ((lv,i),(names,_,_,_)) ->
 	  (* Last known constant wrapping Fix is ref = [labs](Fix l) *)
 	  (match compute_consteval_direct env sigma ref with
 	     | NotAnElimination -> (*Above const was eliminable but this not!*)
@@ -372,7 +372,8 @@ let make_elim_fun (names,(nbfix,lv,n)) u largs =
             List.fold_left_i (fun q (* j = n+1-q *) c (ij,tij) ->
               let subst = List.map (Vars.lift (-q)) (List.firstn (n-ij) la) in
               let tij' = Vars.substl (List.rev subst) tij in
-	      mkLambda (x,tij',c)) 1 body (List.rev lv)
+              let r = Sorts.Relevant in  (* TODO relevance *)
+              mkLambda (x,r,tij',c)) 1 body (List.rev lv)
           in Some (minargs,g)
 
 (* [f] is convertible to [Fix(recindices,bodynum),bodyvect)]:
@@ -382,7 +383,8 @@ let dummy = mkProp
 let vfx = Id.of_string "_expanded_fix_"
 let vfun = Id.of_string "_eliminator_function_"
 let venv = let open Context.Named.Declaration in
-           val_of_named_context [LocalAssum (vfx, dummy); LocalAssum (vfun, dummy)]
+  val_of_named_context [LocalAssum (vfx, Sorts.Relevant, dummy);
+                        LocalAssum (vfun, Sorts.Relevant, dummy)]
 
 (* Mark every occurrence of substituted vars (associated to a function)
    as a problem variable: an evar that can be instantiated either by
@@ -470,7 +472,7 @@ let reduce_fix whdfun sigma fix stack =
 	   | _ -> NotReducible)
 
 let contract_fix_use_function env sigma f
-  ((recindices,bodynum),(_names,_types,bodies as typedbodies)) =
+  ((recindices,bodynum),(_names,_,_types,bodies as typedbodies)) =
   let nbodies = Array.length recindices in
   let make_Fi j = (mkFix((recindices,j),typedbodies), f j) in
   let lbodies = List.init nbodies make_Fi in
@@ -493,7 +495,7 @@ let reduce_fix_use_function env sigma f whfun fix stack =
 	   | _ -> NotReducible)
 
 let contract_cofix_use_function env sigma f
-  (bodynum,(_names,_,bodies as typedbodies)) =
+  (bodynum,(_names,_,_,bodies as typedbodies)) =
   let nbodies = Array.length bodies in
   let make_Fi j = (mkCoFix(j,typedbodies), f j) in
   let subbodies = List.init nbodies make_Fi in
@@ -505,7 +507,7 @@ let reduce_mind_case_use_function func env sigma mia =
     | Construct ((ind_sp,i),u) ->
 	let real_cargs = List.skipn mia.mci.ci_npar mia.mcargs in
 	applist (mia.mlf.(i-1), real_cargs)
-    | CoFix (bodynum,(names,_,_) as cofix) ->
+    | CoFix (bodynum,(names,_,_,_) as cofix) ->
 	let build_cofix_name =
 	  if isConst sigma func then
             let minargs = List.length mia.mcargs in
@@ -630,12 +632,12 @@ let whd_nothing_for_iota env sigma s =
       | Rel n ->
           let open Context.Rel.Declaration in
 	  (match lookup_rel n env with
-	     | LocalDef (_,body,_) -> whrec (lift n body, stack)
+             | LocalDef (_,_,body,_) -> whrec (lift n body, stack)
 	     | _ -> s)
       | Var id ->
           let open Context.Named.Declaration in
 	  (match lookup_named id env with
-	     | LocalDef (_,body,_) -> whrec (body, stack)
+             | LocalDef (_,_,body,_) -> whrec (body, stack)
 	     | _ -> s)
       | Evar ev -> s
       | Meta ev ->
@@ -646,10 +648,10 @@ let whd_nothing_for_iota env sigma s =
 	  (match constant_opt_value_in env (const, u) with
 	     | Some  body -> whrec (EConstr.of_constr body, stack)
 	     | None -> s)
-      | LetIn (_,b,_,c) -> stacklam whrec [b] sigma c stack
+      | LetIn (_,_,b,_,c) -> stacklam whrec [b] sigma c stack
       | Cast (c,_,_) -> whrec (c, stack)
       | App (f,cl)  -> whrec (f, Stack.append_app cl stack)
-      | Lambda (na,t,c) ->
+      | Lambda (na,_,t,c) ->
           (match Stack.decomp stack with
              | Some (a,m) -> stacklam whrec [a] sigma c m
 	     | _ -> s)
@@ -741,11 +743,11 @@ and whd_simpl_stack env sigma =
     let stack = Array.to_list stack in
     let s' = (x, stack) in
     match EConstr.kind sigma x with
-      | Lambda (na,t,c) ->
+      | Lambda (na,_,t,c) ->
           (match stack with
              | [] -> s'
              | a :: rest -> redrec (beta_applist sigma (x, stack)))
-      | LetIn (n,b,t,c) -> redrec (applist (Vars.substl [b] c, stack))
+      | LetIn (n,_,b,t,c) -> redrec (applist (Vars.substl [b] c, stack))
       | App (f,cl) -> redrec (applist(f, (Array.to_list cl)@stack))
       | Cast (c,_,_) -> redrec (applist(c, stack))
       | Case (ci,p,c,lf) ->
@@ -791,7 +793,7 @@ and whd_simpl_stack env sigma =
 	     let sapp, nocase = red_elim_const env sigma ref u stack in
              let hd, _ as s'' = redrec (applist(sapp)) in
              let rec is_case x = match EConstr.kind sigma x with
-               | Lambda (_,_, x) | LetIn (_,_,_, x) | Cast (x, _,_) -> is_case x
+               | Lambda (_,_,_, x) | LetIn (_,_,_,_, x) | Cast (x, _,_) -> is_case x
                | App (hd, _) -> is_case hd
                | Case _ -> true
                | _ -> false in
@@ -839,12 +841,12 @@ let try_red_product env sigma c =
                         simpfun (Stack.zip sigma (f,stack')))
              | _ -> simpfun (mkApp (redrec env f, l)))
       | Cast (c,_,_) -> redrec env c
-      | Prod (x,a,b) ->
+      | Prod (x,r,a,b) ->
           let open Context.Rel.Declaration in
-	  mkProd (x, a, redrec (push_rel (LocalAssum (x, a)) env) b)
-      | LetIn (x,a,b,t) -> redrec env (Vars.subst1 a t)
+          mkProd (x, r, a, redrec (push_rel (LocalAssum (x, r, a)) env) b)
+      | LetIn (x,r,a,b,t) -> redrec env (Vars.subst1 a t)
       | Case (ci,p,d,lf) -> simpfun (mkCase (ci,p,redrec env d,lf))
-      | Proj (p, c) -> 
+      | Proj (p, c) ->
 	let c' = 
 	  match EConstr.kind sigma c with
 	  | Construct _ -> c
@@ -1152,12 +1154,13 @@ let compute = cbv_betadeltaiota
 let abstract_scheme env sigma (locc,a) (c, sigma) =
   let ta = Retyping.get_type_of env sigma a in
   let na = named_hd env sigma ta Anonymous in
+  let r = Sorts.Relevant in (* TODO relevance *)
   if occur_meta sigma ta then user_err Pp.(str "Cannot find a type for the generalisation.");
   if occur_meta sigma a then
-    mkLambda (na,ta,c), sigma
+    mkLambda (na,r,ta,c), sigma
   else
     let c', sigma' = subst_closed_term_occ env sigma (AtOccs locc) a c in
-      mkLambda (na,ta,c'), sigma'
+      mkLambda (na,r,ta,c'), sigma'
 
 let pattern_occs loccs_trm = begin fun env sigma c ->
   let abstr_trm, sigma = List.fold_right (abstract_scheme env sigma) loccs_trm (c,sigma) in
@@ -1191,10 +1194,10 @@ let reduce_to_ind_gen allow_product env sigma t =
     let t = hnf_constr env sigma t in
     match EConstr.kind sigma (fst (decompose_app_vect sigma t)) with
       | Ind ind-> (check_privacy env ind, it_mkProd_or_LetIn t l)
-      | Prod (n,ty,t') ->
+      | Prod (n,r,ty,t') ->
 	  let open Context.Rel.Declaration in
 	  if allow_product then
-	    elimrec (push_rel (LocalAssum (n,ty)) env) t' ((LocalAssum (n,ty))::l)
+            elimrec (push_rel (LocalAssum (n,r,ty)) env) t' ((LocalAssum (n,r,ty))::l)
 	  else
 	    user_err  (str"Not an inductive definition.")
       | _ ->
@@ -1222,12 +1225,12 @@ exception NotStepReducible
 let one_step_reduce env sigma c =
   let rec redrec (x, stack) =
     match EConstr.kind sigma x with
-      | Lambda (n,t,c)  ->
+      | Lambda (n,_,t,c)  ->
           (match stack with
              | []        -> raise NotStepReducible
              | a :: rest -> (Vars.subst1 a c, rest))
       | App (f,cl) -> redrec (f, (Array.to_list cl)@stack)
-      | LetIn (_,f,_,cl) -> (Vars.subst1 f cl,stack)
+      | LetIn (_,_,f,_,cl) -> (Vars.subst1 f cl,stack)
       | Cast (c,_,_) -> redrec (c,stack)
       | Case (ci,p,c,lf) ->
           (try
@@ -1269,10 +1272,10 @@ let reduce_to_ref_gen allow_product env sigma ref t =
   let rec elimrec env t l =
     let c, _ = decompose_app_vect sigma t in
     match EConstr.kind sigma c with
-      | Prod (n,ty,t') ->
+      | Prod (n,r,ty,t') ->
           if allow_product then
 	    let open Context.Rel.Declaration in
-	    elimrec (push_rel (LocalAssum (n,t)) env) t' ((LocalAssum (n,ty))::l)
+            elimrec (push_rel (LocalAssum (n,r,ty)) env) t' ((LocalAssum (n,r,ty))::l)
           else
             error_cannot_recognize ref
       | _ ->

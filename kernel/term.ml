@@ -47,6 +47,7 @@ type case_info = Constr.case_info =
     ci_npar       : int;
     ci_cstr_ndecls : int array;
     ci_cstr_nargs : int array;
+    ci_relevance : Sorts.relevance;
     ci_pp_info    : case_printing
   }
 
@@ -80,9 +81,9 @@ type ('constr, 'types, 'sort, 'univs) kind_of_term =
   | Evar      of 'constr pexistential
   | Sort      of 'sort
   | Cast      of 'constr * cast_kind * 'types
-  | Prod      of Name.t * 'types * 'types
-  | Lambda    of Name.t * 'types * 'constr
-  | LetIn     of Name.t * 'constr * 'types * 'constr
+  | Prod      of Name.t * Sorts.relevance * 'types * 'types
+  | Lambda    of Name.t * Sorts.relevance * 'types * 'constr
+  | LetIn     of Name.t * Sorts.relevance * 'constr * 'types * 'constr
   | App       of 'constr * 'constr array
   | Const     of (Constant.t * 'univs)
   | Ind       of (inductive * 'univs)
@@ -115,7 +116,7 @@ let mkMeta = Constr.mkMeta
 let mkEvar = Constr.mkEvar
 let mkSort = Constr.mkSort
 let mkProp = Constr.mkProp
-let mkSet  = Constr.mkSet 
+let mkSet  = Constr.mkSet
 let mkType = Constr.mkType
 let mkCast = Constr.mkCast
 let mkProd = Constr.mkProd
@@ -236,57 +237,57 @@ let decompose_appvect c =
 (* Other term constructors *)
 (***************************)
 
-let mkNamedProd id typ c = mkProd (Name id, typ, subst_var id c)
-let mkNamedLambda id typ c = mkLambda (Name id, typ, subst_var id c)
-let mkNamedLetIn id c1 t c2 = mkLetIn (Name id, c1, t, subst_var id c2)
+let mkNamedProd id r typ c = mkProd (Name id, r, typ, subst_var id c)
+let mkNamedLambda id r typ c = mkLambda (Name id, r, typ, subst_var id c)
+let mkNamedLetIn id r c1 t c2 = mkLetIn (Name id, r, c1, t, subst_var id c2)
 
 (* Constructs either [(x:t)c] or [[x=b:t]c] *)
 let mkProd_or_LetIn decl c =
   let open Context.Rel.Declaration in
   match decl with
-  | LocalAssum (na,t) -> mkProd (na, t, c)
-  | LocalDef (na,b,t) -> mkLetIn (na, b, t, c)
+  | LocalAssum (na,r,t) -> mkProd (na, r, t, c)
+  | LocalDef (na,r,b,t) -> mkLetIn (na, r, b, t, c)
 
 let mkNamedProd_or_LetIn decl c =
   let open Context.Named.Declaration in
   match decl with
-    | LocalAssum (id,t) -> mkNamedProd id t c
-    | LocalDef (id,b,t) -> mkNamedLetIn id b t c
+    | LocalAssum (id,r,t) -> mkNamedProd id r t c
+    | LocalDef (id,r,b,t) -> mkNamedLetIn id r b t c
 
 (* Constructs either [(x:t)c] or [c] where [x] is replaced by [b] *)
 let mkProd_wo_LetIn decl c =
   let open Context.Rel.Declaration in
   match decl with
-  | LocalAssum (na,t) -> mkProd (na, t, c)
-  | LocalDef (na,b,t) -> subst1 b c
+  | LocalAssum (na,r,t) -> mkProd (na, r, t, c)
+  | LocalDef (na,_,b,t) -> subst1 b c
 
 let mkNamedProd_wo_LetIn decl c =
   let open Context.Named.Declaration in
   match decl with
-    | LocalAssum (id,t) -> mkNamedProd id t c
-    | LocalDef (id,b,t) -> subst1 b (subst_var id c)
+    | LocalAssum (id,r,t) -> mkNamedProd id r t c
+    | LocalDef (id,r,b,t) -> subst1 b (subst_var id c)
 
 (* non-dependent product t1 -> t2 *)
-let mkArrow t1 t2 = mkProd (Anonymous, t1, t2)
+let mkArrow t1 r t2 = mkProd (Anonymous, r, t1, t2)
 
 (* Constructs either [[x:t]c] or [[x=b:t]c] *)
 let mkLambda_or_LetIn decl c =
   let open Context.Rel.Declaration in
   match decl with
-    | LocalAssum (na,t) -> mkLambda (na, t, c)
-    | LocalDef (na,b,t) -> mkLetIn (na, b, t, c)
+    | LocalAssum (na,r,t) -> mkLambda (na, r, t, c)
+    | LocalDef (na,r,b,t) -> mkLetIn (na, r, b, t, c)
 
 let mkNamedLambda_or_LetIn decl c =
   let open Context.Named.Declaration in
   match decl with
-    | LocalAssum (id,t) -> mkNamedLambda id t c
-    | LocalDef (id,b,t) -> mkNamedLetIn id b t c
+    | LocalAssum (id,r,t) -> mkNamedLambda id r t c
+    | LocalDef (id,r,b,t) -> mkNamedLetIn id r b t c
 
 (* prodn n [xn:Tn;..;x1:T1;Gamma] b = (x1:T1)..(xn:Tn)b *)
 let prodn n env b =
   let rec prodrec = function
     | (0, env, b)        -> b
-    | (n, ((v,t)::l), b) -> prodrec (n-1,  l, mkProd (v,t,b))
+    | (n, ((v,r,t)::l), b) -> prodrec (n-1,  l, mkProd (v,r,t,b))
     | _ -> assert false
   in
   prodrec (n,env,b)
@@ -298,7 +299,7 @@ let compose_prod l b = prodn (List.length l) l b
 let lamn n env b =
   let rec lamrec = function
     | (0, env, b)        -> b
-    | (n, ((v,t)::l), b) -> lamrec (n-1,  l, mkLambda (v,t,b))
+    | (n, ((v,r,t)::l), b) -> lamrec (n-1,  l, mkLambda (v,r,t,b))
     | _ -> assert false
   in
   lamrec (n,env,b)
@@ -321,7 +322,7 @@ let rec to_lambda n prod =
     prod
   else
     match kind_of_term prod with
-      | Prod (na,ty,bd) -> mkLambda (na,ty,to_lambda (n-1) bd)
+      | Prod (na,r,ty,bd) -> mkLambda (na,r,ty,to_lambda (n-1) bd)
       | Cast (c,_,_) -> to_lambda n c
       | _   -> user_err ~hdr:"to_lambda" (mt ())
 
@@ -330,7 +331,7 @@ let rec to_prod n lam =
     lam
   else
     match kind_of_term lam with
-      | Lambda (na,ty,bd) -> mkProd (na,ty,to_prod (n-1) bd)
+      | Lambda (na,r,ty,bd) -> mkProd (na,r,ty,to_prod (n-1) bd)
       | Cast (c,_,_) -> to_prod n c
       | _   -> user_err ~hdr:"to_prod" (mt ())
 
@@ -342,7 +343,7 @@ let it_mkLambda_or_LetIn = List.fold_left (fun c d -> mkLambda_or_LetIn d c)
 let lambda_applist c l =
   let rec app subst c l =
     match kind_of_term c, l with
-    | Lambda(_,_,c), arg::l -> app (arg::subst) c l
+    | Lambda(_,_,_,c), arg::l -> app (arg::subst) c l
     | _, [] -> substl subst c
     | _ -> anomaly (Pp.str "Not enough lambda's.") in
   app [] c l
@@ -355,8 +356,8 @@ let lambda_applist_assum n c l =
       if l == [] then substl subst t
       else anomaly (Pp.str "Too many arguments.")
     else match kind_of_term t, l with
-    | Lambda(_,_,c), arg::l -> app (n-1) (arg::subst) c l
-    | LetIn(_,b,_,c), _ -> app (n-1) (substl subst b::subst) c l
+    | Lambda(_,_,_,c), arg::l -> app (n-1) (arg::subst) c l
+    | LetIn(_,_,b,_,c), _ -> app (n-1) (substl subst b::subst) c l
     | _, [] -> anomaly (Pp.str "Not enough arguments.")
     | _ -> anomaly (Pp.str "Not enough lambda/let's.") in
   app n [] c l
@@ -367,7 +368,7 @@ let lambda_appvect_assum n c v = lambda_applist_assum n c (Array.to_list v)
 let prod_applist c l =
   let rec app subst c l =
     match kind_of_term c, l with
-    | Prod(_,_,c), arg::l -> app (arg::subst) c l
+    | Prod(_,_,_,c), arg::l -> app (arg::subst) c l
     | _, [] -> substl subst c
     | _ -> anomaly (Pp.str "Not enough prod's.") in
   app [] c l
@@ -381,8 +382,8 @@ let prod_applist_assum n c l =
       if l == [] then substl subst t
       else anomaly (Pp.str "Too many arguments.")
     else match kind_of_term t, l with
-    | Prod(_,_,c), arg::l -> app (n-1) (arg::subst) c l
-    | LetIn(_,b,_,c), _ -> app (n-1) (substl subst b::subst) c l
+    | Prod(_,_,_,c), arg::l -> app (n-1) (arg::subst) c l
+    | LetIn(_,_,b,_,c), _ -> app (n-1) (substl subst b::subst) c l
     | _, [] -> anomaly (Pp.str "Not enough arguments.")
     | _ -> anomaly (Pp.str "Not enough prod/let's.") in
   app n [] c l
@@ -397,7 +398,7 @@ let prod_appvect_assum n c v = prod_applist_assum n c (Array.to_list v)
    ([(xn,Tn);...;(x1,T1)],T), where T is not a product *)
 let decompose_prod =
   let rec prodec_rec l c = match kind_of_term c with
-    | Prod (x,t,c) -> prodec_rec ((x,t)::l) c
+    | Prod (x,r,t,c) -> prodec_rec ((x,r,t)::l) c
     | Cast (c,_,_)   -> prodec_rec l c
     | _              -> l,c
   in
@@ -407,7 +408,7 @@ let decompose_prod =
    ([(xn,Tn);...;(x1,T1)],T), where T is not a lambda *)
 let decompose_lam =
   let rec lamdec_rec l c = match kind_of_term c with
-    | Lambda (x,t,c) -> lamdec_rec ((x,t)::l) c
+    | Lambda (x,r,t,c) -> lamdec_rec ((x,r,t)::l) c
     | Cast (c,_,_)     -> lamdec_rec l c
     | _                -> l,c
   in
@@ -420,7 +421,7 @@ let decompose_prod_n n =
   let rec prodec_rec l n c =
     if Int.equal n 0 then l,c
     else match kind_of_term c with
-      | Prod (x,t,c) -> prodec_rec ((x,t)::l) (n-1) c
+      | Prod (x,r,t,c) -> prodec_rec ((x,r,t)::l) (n-1) c
       | Cast (c,_,_)   -> prodec_rec l n c
       | _ -> user_err (str "decompose_prod_n: not enough products")
   in
@@ -433,7 +434,7 @@ let decompose_lam_n n =
   let rec lamdec_rec l n c =
     if Int.equal n 0 then l,c
     else match kind_of_term c with
-      | Lambda (x,t,c) -> lamdec_rec ((x,t)::l) (n-1) c
+      | Lambda (x,r,t,c) -> lamdec_rec ((x,r,t)::l) (n-1) c
       | Cast (c,_,_)     -> lamdec_rec l n c
       | _ -> user_err (str "decompose_lam_n: not enough abstractions")
   in
@@ -445,8 +446,8 @@ let decompose_prod_assum =
   let open Context.Rel.Declaration in
   let rec prodec_rec l c =
     match kind_of_term c with
-    | Prod (x,t,c)    -> prodec_rec (Context.Rel.add (LocalAssum (x,t)) l) c
-    | LetIn (x,b,t,c) -> prodec_rec (Context.Rel.add (LocalDef (x,b,t)) l) c
+    | Prod (x,r,t,c)    -> prodec_rec (Context.Rel.add (LocalAssum (x,r,t)) l) c
+    | LetIn (x,r,b,t,c) -> prodec_rec (Context.Rel.add (LocalDef (x,r,b,t)) l) c
     | Cast (c,_,_)      -> prodec_rec l c
     | _               -> l,c
   in
@@ -458,8 +459,8 @@ let decompose_lam_assum =
   let rec lamdec_rec l c =
     let open Context.Rel.Declaration in
     match kind_of_term c with
-    | Lambda (x,t,c)  -> lamdec_rec (Context.Rel.add (LocalAssum (x,t)) l) c
-    | LetIn (x,b,t,c) -> lamdec_rec (Context.Rel.add (LocalDef (x,b,t)) l) c
+    | Lambda (x,r,t,c)  -> lamdec_rec (Context.Rel.add (LocalAssum (x,r,t)) l) c
+    | LetIn (x,r,b,t,c) -> lamdec_rec (Context.Rel.add (LocalDef (x,r,b,t)) l) c
     | Cast (c,_,_)      -> lamdec_rec l c
     | _               -> l,c
   in
@@ -477,8 +478,8 @@ let decompose_prod_n_assum n =
     else
       let open Context.Rel.Declaration in
       match kind_of_term c with
-      | Prod (x,t,c)    -> prodec_rec (Context.Rel.add (LocalAssum (x,t)) l) (n-1) c
-      | LetIn (x,b,t,c) -> prodec_rec (Context.Rel.add (LocalDef (x,b,t)) l) (n-1) c
+      | Prod (x,r,t,c)    -> prodec_rec (Context.Rel.add (LocalAssum (x,r,t)) l) (n-1) c
+      | LetIn (x,r,b,t,c) -> prodec_rec (Context.Rel.add (LocalDef (x,r,b,t)) l) (n-1) c
       | Cast (c,_,_)      -> prodec_rec l n c
       | c -> user_err (str  "decompose_prod_n_assum: not enough assumptions")
   in
@@ -498,8 +499,8 @@ let decompose_lam_n_assum n =
     else
       let open Context.Rel.Declaration in
       match kind_of_term c with
-      | Lambda (x,t,c)  -> lamdec_rec (Context.Rel.add (LocalAssum (x,t)) l) (n-1) c
-      | LetIn (x,b,t,c) -> lamdec_rec (Context.Rel.add (LocalDef (x,b,t)) l) n c
+      | Lambda (x,r,t,c)  -> lamdec_rec (Context.Rel.add (LocalAssum (x,r,t)) l) (n-1) c
+      | LetIn (x,r,b,t,c) -> lamdec_rec (Context.Rel.add (LocalDef (x,r,b,t)) l) n c
       | Cast (c,_,_)      -> lamdec_rec l n c
       | c -> user_err (str "decompose_lam_n_assum: not enough abstractions")
   in
@@ -514,8 +515,8 @@ let decompose_lam_n_decls n =
     else
       let open Context.Rel.Declaration in
       match kind_of_term c with
-      | Lambda (x,t,c)  -> lamdec_rec (Context.Rel.add (LocalAssum (x,t)) l) (n-1) c
-      | LetIn (x,b,t,c) -> lamdec_rec (Context.Rel.add (LocalDef (x,b,t)) l) (n-1) c
+      | Lambda (x,r,t,c)  -> lamdec_rec (Context.Rel.add (LocalAssum (x,r,t)) l) (n-1) c
+      | LetIn (x,r,b,t,c) -> lamdec_rec (Context.Rel.add (LocalDef (x,r,b,t)) l) (n-1) c
       | Cast (c,_,_)      -> lamdec_rec l n c
       | c -> user_err (str "decompose_lam_n_decls: not enough abstractions")
   in
@@ -546,8 +547,8 @@ let destArity =
   let open Context.Rel.Declaration in
   let rec prodec_rec l c =
     match kind_of_term c with
-    | Prod (x,t,c)    -> prodec_rec (LocalAssum (x,t) :: l) c
-    | LetIn (x,b,t,c) -> prodec_rec (LocalDef (x,b,t) :: l) c
+    | Prod (x,r,t,c)    -> prodec_rec (LocalAssum (x,r,t) :: l) c
+    | LetIn (x,r,b,t,c) -> prodec_rec (LocalDef (x,r,b,t) :: l) c
     | Cast (c,_,_)      -> prodec_rec l c
     | Sort s          -> l,s
     | _               -> anomaly ~label:"destArity" (Pp.str "not an arity.")
@@ -558,8 +559,8 @@ let mkArity (sign,s) = it_mkProd_or_LetIn (mkSort s) sign
 
 let rec isArity c =
   match kind_of_term c with
-  | Prod (_,_,c)    -> isArity c
-  | LetIn (_,b,_,c) -> isArity (subst1 b c)
+  | Prod (_,_,_,c)    -> isArity c
+  | LetIn (_,_,b,_,c) -> isArity (subst1 b c)
   | Cast (c,_,_)      -> isArity c
   | Sort _          -> true
   | _               -> false
@@ -570,15 +571,15 @@ let rec isArity c =
 type ('constr, 'types) kind_of_type =
   | SortType   of sorts
   | CastType   of 'types * 'types
-  | ProdType   of Name.t * 'types * 'types
-  | LetInType  of Name.t * 'constr * 'types * 'types
+  | ProdType   of Name.t * Sorts.relevance * 'types * 'types
+  | LetInType  of Name.t * Sorts.relevance * 'constr * 'types * 'types
   | AtomicType of 'constr * 'constr array
 
 let kind_of_type t = match kind_of_term t with
   | Sort s -> SortType s
   | Cast (c,_,t) -> CastType (c, t)
-  | Prod (na,t,c) -> ProdType (na, t, c)
-  | LetIn (na,b,t,c) -> LetInType (na, b, t, c)
+  | Prod (na,r,t,c) -> ProdType (na, r, t, c)
+  | LetIn (na,r,b,t,c) -> LetInType (na, r, b, t, c)
   | App (c,l) -> AtomicType (c, l)
   | (Rel _ | Meta _ | Var _ | Evar _ | Const _ 
   | Proj _ | Case _ | Fix _ | CoFix _ | Ind _)

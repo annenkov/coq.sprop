@@ -87,10 +87,10 @@ let rec build_lambda sigma vars ctx m = match vars with
   (* change [ x1 ... xn y z1 ... zm |- t ] into
      [ x1 ... xn z1 ... zm |- lam y. t ] *)
   let pre, suf = List.chop (pred n) ctx in
-  let (na, t, suf) = match suf with
+  let (na, r, t, suf) = match suf with
   | [] -> assert false
-  | (_, id, t) :: suf ->
-     (Name id, t, suf)
+  | (_, id, r, t) :: suf ->
+     (Name id, r, t, suf)
   in
   (** Check that the abstraction is legal by generating a transitive closure of
       its dependencies. *)
@@ -101,7 +101,7 @@ let rec build_lambda sigma vars ctx m = match vars with
     let check i b = b || not (Int.Set.mem i rels) in
     List.for_all_i check 1 clear
   in
-  let fold (_, _, t) clear = is_nondep t clear :: clear in
+  let fold (_, _, _, t) clear = is_nondep t clear :: clear in
   (** Produce a list of booleans: true iff we keep the hypothesis *)
   let clear = List.fold_right fold pre [false] in
   let clear = List.drop_last clear in
@@ -126,11 +126,11 @@ let rec build_lambda sigma vars ctx m = match vars with
     mkRel 1 ::
     List.mapi (fun i _ -> mkRel (i + keep + 2)) suf
   in
-  let map i (na, id, c) =
+  let map i (na, id, r, c) =
     let i = succ i in
     let subst = List.skipn i subst in
     let subst = List.map (fun c -> Vars.lift (- i) c) subst in
-    (na, id, substl subst c)
+    (na, id, r, substl subst c)
   in
   let pre = List.mapi map pre in
   let pre = List.filter_with clear pre in
@@ -145,12 +145,12 @@ let rec build_lambda sigma vars ctx m = match vars with
   in
   let vars = List.map map vars in
   (** Create the abstraction *)
-  let m = mkLambda (na, Vars.lift keep t, m) in
+  let m = mkLambda (na, r, Vars.lift keep t, m) in
   build_lambda sigma vars (pre @ suf) m
 
 let rec extract_bound_aux k accu frels ctx = match ctx with
 | [] -> accu
-| (na, _, _) :: ctx ->
+| (na, _, _, _) :: ctx ->
   if Int.Set.mem k frels then
     begin match na with
     | Name id ->
@@ -166,24 +166,24 @@ let extract_bound_vars frels ctx =
 let dummy_constr = EConstr.mkProp
 
 let make_renaming ids = function
-| (Name id, _, _) ->
+| (Name id, _, _, _) ->
   begin
     try EConstr.mkRel (List.index Id.equal id ids)
     with Not_found -> dummy_constr
   end
 | _ -> dummy_constr
 
-let push_binder na1 na2 t ctx =
+let push_binder na1 na2 r t ctx =
   let id2 = match na2 with
   | Name id2 -> id2
   | Anonymous ->
-     let avoid = Id.Set.of_list (List.map pi2 ctx) in
+     let avoid = Id.Set.of_list (List.map (fun (_,id,_,_) -> id) ctx) in
      Namegen.next_ident_away Namegen.default_non_dependent_ident avoid in
-  (na1, id2, t) :: ctx
+  (na1, id2, r, t) :: ctx
 
-let to_fix (idx, (nas, cs, ts)) =
+let to_fix (idx, (nas, rs, cs, ts)) =
   let inj = EConstr.of_constr in
-  (idx, (nas, Array.map inj cs, Array.map inj ts))
+  (idx, (nas, rs, Array.map inj cs, Array.map inj ts))
 
 let merge_binding sigma allow_bound_rels ctx n cT subst =
   let c = match ctx with
@@ -308,20 +308,20 @@ let matches_core env sigma allow_bound_rels
       | PProj (p1,c1), Proj (p2,c2) when Projection.equal p1 p2 ->
           sorec ctx env subst c1 c2
 
-      | PProd (na1,c1,d1), Prod(na2,c2,d2) ->
-	  sorec (push_binder na1 na2 c2 ctx) (EConstr.push_rel (LocalAssum (na2,c2)) env)
+      | PProd (na1,c1,d1), Prod(na2,r,c2,d2) ->
+          sorec (push_binder na1 na2 r c2 ctx) (EConstr.push_rel (LocalAssum (na2,r,c2)) env)
             (add_binders na1 na2 binding_vars (sorec ctx env subst c1 c2)) d1 d2
 
-      | PLambda (na1,c1,d1), Lambda(na2,c2,d2) ->
-	  sorec (push_binder na1 na2 c2 ctx) (EConstr.push_rel (LocalAssum (na2,c2)) env)
+      | PLambda (na1,c1,d1), Lambda(na2,r,c2,d2) ->
+          sorec (push_binder na1 na2 r c2 ctx) (EConstr.push_rel (LocalAssum (na2,r,c2)) env)
             (add_binders na1 na2 binding_vars (sorec ctx env subst c1 c2)) d1 d2
 
-      | PLetIn (na1,c1,Some t1,d1), LetIn(na2,c2,t2,d2) ->
-	  sorec (push_binder na1 na2 t2 ctx) (EConstr.push_rel (LocalDef (na2,c2,t2)) env)
+      | PLetIn (na1,c1,Some t1,d1), LetIn(na2,r,c2,t2,d2) ->
+          sorec (push_binder na1 na2 r t2 ctx) (EConstr.push_rel (LocalDef (na2,r,c2,t2)) env)
             (add_binders na1 na2 binding_vars (sorec ctx env (sorec ctx env subst c1 c2) t1 t2)) d1 d2
 
-      | PLetIn (na1,c1,None,d1), LetIn(na2,c2,t2,d2) ->
-	  sorec (push_binder na1 na2 t2 ctx) (EConstr.push_rel (LocalDef (na2,c2,t2)) env)
+      | PLetIn (na1,c1,None,d1), LetIn(na2,r,c2,t2,d2) ->
+          sorec (push_binder na1 na2 r t2 ctx) (EConstr.push_rel (LocalDef (na2,r,c2,t2)) env)
             (add_binders na1 na2 binding_vars (sorec ctx env subst c1 c2)) d1 d2
 
       | PIf (a1,b1,b1'), Case (ci,_,a2,[|b2;b2'|]) ->
@@ -330,7 +330,7 @@ let matches_core env sigma allow_bound_rels
 	  let n = Context.Rel.length ctx_b2 in
           let n' = Context.Rel.length ctx_b2' in
 	  if Vars.noccur_between sigma 1 n b2 && Vars.noccur_between sigma 1 n' b2' then
-            let f l (LocalAssum (na,t) | LocalDef (na,_,t)) = push_binder Anonymous na t l in
+            let f l (LocalAssum (na,r,t) | LocalDef (na,r,_,t)) = push_binder Anonymous na r t l in
 	    let ctx_br = List.fold_left f ctx ctx_b2 in
 	    let ctx_br' = List.fold_left f ctx ctx_b2' in
 	    let b1 = lift_pattern n b1 and b1' = lift_pattern n' b1' in
@@ -427,26 +427,26 @@ let sub_match ?(closed=true) env sigma pat c =
       | _ -> assert false
       in
       try_aux [env, c1] next_mk_ctx next
-  | Lambda (x,c1,c2) ->
+  | Lambda (x,r,c1,c2) ->
       let next_mk_ctx = function
-      | [c1; c2] -> mk_ctx (mkLambda (x, c1, c2))
+      | [c1; c2] -> mk_ctx (mkLambda (x, r, c1, c2))
       | _ -> assert false
       in
-      let env' = EConstr.push_rel (LocalAssum (x,c1)) env in
+      let env' = EConstr.push_rel (LocalAssum (x,r,c1)) env in
       try_aux [(env, c1); (env', c2)] next_mk_ctx next
-  | Prod (x,c1,c2) ->
+  | Prod (x,r,c1,c2) ->
       let next_mk_ctx = function
-      | [c1; c2] -> mk_ctx (mkProd (x, c1, c2))
+      | [c1; c2] -> mk_ctx (mkProd (x, r, c1, c2))
       | _ -> assert false
       in
-      let env' = EConstr.push_rel (LocalAssum (x,c1)) env in
+      let env' = EConstr.push_rel (LocalAssum (x,r,c1)) env in
       try_aux [(env, c1); (env', c2)] next_mk_ctx next
-  | LetIn (x,c1,t,c2) ->
+  | LetIn (x,r,c1,t,c2) ->
       let next_mk_ctx = function
-      | [c1; c2] -> mk_ctx (mkLetIn (x, c1, t, c2))
+      | [c1; c2] -> mk_ctx (mkLetIn (x, r, c1, t, c2))
       | _ -> assert false
       in
-      let env' = EConstr.push_rel (LocalDef (x,c1,t)) env in
+      let env' = EConstr.push_rel (LocalDef (x,r,c1,t)) env in
       try_aux [(env, c1); (env', c2)] next_mk_ctx next
   | App (c1,lc) ->
      let lc1 = Array.sub lc 0 (Array.length lc - 1) in
@@ -462,19 +462,19 @@ let sub_match ?(closed=true) env sigma pat c =
       in
       let sub = (env, c1) :: (env, hd) :: subargs env lc in
       try_aux sub next_mk_ctx next
-  | Fix (indx,(names,types,bodies as recdefs)) ->
+  | Fix (indx,(names,rs,types,bodies as recdefs)) ->
     let nb_fix = Array.length types in
     let next_mk_ctx le =
       let (ntypes,nbodies) = CList.chop nb_fix le in
-      mk_ctx (mkFix (indx,(names, Array.of_list ntypes, Array.of_list nbodies))) in
+      mk_ctx (mkFix (indx,(names, rs, Array.of_list ntypes, Array.of_list nbodies))) in
     let env' = push_rec_types recdefs env in
     let sub = subargs env types @ subargs env' bodies in
     try_aux sub next_mk_ctx next
-  | CoFix (i,(names,types,bodies as recdefs)) ->
+  | CoFix (i,(names,rs,types,bodies as recdefs)) ->
     let nb_fix = Array.length types in
     let next_mk_ctx le =
       let (ntypes,nbodies) = CList.chop nb_fix le in
-      mk_ctx (mkCoFix (i,(names, Array.of_list ntypes, Array.of_list nbodies))) in
+      mk_ctx (mkCoFix (i,(names, rs, Array.of_list ntypes, Array.of_list nbodies))) in
     let env' = push_rec_types recdefs env in
     let sub = subargs env types @ subargs env' bodies in
     try_aux sub next_mk_ctx next

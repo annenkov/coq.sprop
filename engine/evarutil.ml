@@ -137,10 +137,10 @@ let is_ground_term evd t =
 
 let is_ground_env evd env =
   let is_ground_rel_decl = function
-    | RelDecl.LocalDef (_,b,_) -> is_ground_term evd (EConstr.of_constr b)
+    | RelDecl.LocalDef (_,_,b,_) -> is_ground_term evd (EConstr.of_constr b)
     | _ -> true in
   let is_ground_named_decl = function
-    | NamedDecl.LocalDef (_,b,_) -> is_ground_term evd (EConstr.of_constr b)
+    | NamedDecl.LocalDef (_,_,b,_) -> is_ground_term evd (EConstr.of_constr b)
     | _ -> true in
   List.for_all is_ground_rel_decl (rel_context env) &&
   List.for_all is_ground_named_decl (named_context env)
@@ -652,7 +652,7 @@ let process_dependent_evar q acc evm is_dependent e =
     queue_term q true (NamedDecl.get_type decl);
     match decl with
     | LocalAssum _ -> ()
-    | LocalDef (_,b,_) -> queue_term q true b
+    | LocalDef (_,_,b,_) -> queue_term q true b
   end (Environ.named_context_of_val evi.evar_hyps);
   match evi.evar_body with
   | Evar_empty ->
@@ -753,7 +753,7 @@ let cached_evar_of_hyp cache sigma decl accu = match cache with
     try Id.Map.find id cache.cache
     with Not_found ->
       (** Dummy value *)
-      let r = ref (NamedDecl.LocalAssum (id, EConstr.mkProp), Evar.Set.empty) in
+      let r = ref (NamedDecl.LocalAssum (id, Sorts.Relevant, EConstr.mkProp), Evar.Set.empty) in
       let () = cache.cache <- Id.Map.add id r cache.cache in
       r
   in

@@ -101,15 +101,15 @@ val destCast : constr -> constr * cast_kind * constr
 [@@ocaml.deprecated "Alias for [Constr.destCast]"]
 
 (** Destructs the product {% $ %}(x:t_1)t_2{% $ %} *)
-val destProd : types -> Name.t * types * types
+val destProd : types -> Name.t * Sorts.relevance * types * types
 [@@ocaml.deprecated "Alias for [Constr.destProd]"]
 
 (** Destructs the abstraction {% $ %}[x:t_1]t_2{% $ %} *)
-val destLambda : constr -> Name.t * types * constr
+val destLambda : constr -> Name.t * Sorts.relevance * types * constr
 [@@ocaml.deprecated "Alias for [Constr.destLambda]"]
 
 (** Destructs the let {% $ %}[x:=b:t_1]t_2{% $ %} *)
-val destLetIn : constr -> Name.t * constr * types * constr
+val destLetIn : constr -> Name.t * Sorts.relevance * constr * types * constr
 [@@ocaml.deprecated "Alias for [Constr.destLetIn]"]
 
 (** Destructs an application *)
@@ -175,12 +175,12 @@ val destCoFix : constr -> cofixpoint
    [forall (_:t1), t2]. Beware [t_2] is NOT lifted.
    Eg: in context [A:Prop], [A->A] is built by [(mkArrow (mkRel 1) (mkRel 2))]
 *)
-val mkArrow : types -> types -> constr
+val mkArrow : types -> Sorts.relevance -> types -> constr
 
 (** Named version of the functions from [Term]. *)
-val mkNamedLambda : Id.t -> types -> constr -> constr
-val mkNamedLetIn : Id.t -> constr -> types -> constr -> constr
-val mkNamedProd : Id.t -> types -> types -> types
+val mkNamedLambda : Id.t -> Sorts.relevance -> types -> constr -> constr
+val mkNamedLetIn : Id.t -> Sorts.relevance -> constr -> types -> constr -> constr
+val mkNamedProd : Id.t -> Sorts.relevance -> types -> types -> types
 
 (** Constructs either [(x:t)c] or [[x=b:t]c] *)
 val mkProd_or_LetIn : Context.Rel.Declaration.t -> types -> types
@@ -203,24 +203,24 @@ val appvectc : constr -> constr array -> constr
 
 (** [prodn n l b] = [forall (x_1:T_1)...(x_n:T_n), b]
    where [l] is [(x_n,T_n)...(x_1,T_1)...]. *)
-val prodn : int -> (Name.t * constr) list -> constr -> constr
+val prodn : int -> (Name.t * Sorts.relevance * constr) list -> constr -> constr
 
 (** [compose_prod l b]
    @return [forall (x_1:T_1)...(x_n:T_n), b]
    where [l] is [(x_n,T_n)...(x_1,T_1)].
    Inverse of [decompose_prod]. *)
-val compose_prod : (Name.t * constr) list -> constr -> constr
+val compose_prod : (Name.t * Sorts.relevance * constr) list -> constr -> constr
 
 (** [lamn n l b]
     @return [fun (x_1:T_1)...(x_n:T_n) => b]
    where [l] is [(x_n,T_n)...(x_1,T_1)...]. *)
-val lamn : int -> (Name.t * constr) list -> constr -> constr
+val lamn : int -> (Name.t * Sorts.relevance * constr) list -> constr -> constr
 
 (** [compose_lam l b]
    @return [fun (x_1:T_1)...(x_n:T_n) => b]
    where [l] is [(x_n,T_n)...(x_1,T_1)].
    Inverse of [it_destLam] *)
-val compose_lam : (Name.t * constr) list -> constr -> constr
+val compose_lam : (Name.t * Sorts.relevance * constr) list -> constr -> constr
 
 (** [to_lambda n l]
    @return [fun (x_1:T_1)...(x_n:T_n) => T]
@@ -265,22 +265,22 @@ val prod_applist_assum : int -> types -> constr list -> types
 
 (** Transforms a product term {% $ %}(x_1:T_1)..(x_n:T_n)T{% $ %} into the pair
    {% $ %}([(x_n,T_n);...;(x_1,T_1)],T){% $ %}, where {% $ %}T{% $ %} is not a product. *)
-val decompose_prod : constr -> (Name.t*constr) list * constr
+val decompose_prod : constr -> (Name.t*Sorts.relevance * constr) list * constr
 
 (** Transforms a lambda term {% $ %}[x_1:T_1]..[x_n:T_n]T{% $ %} into the pair
    {% $ %}([(x_n,T_n);...;(x_1,T_1)],T){% $ %}, where {% $ %}T{% $ %} is not a lambda. *)
-val decompose_lam : constr -> (Name.t*constr) list * constr
+val decompose_lam : constr -> (Name.t*Sorts.relevance * constr) list * constr
 
 (** Given a positive integer n, decompose a product term
    {% $ %}(x_1:T_1)..(x_n:T_n)T{% $ %}
    into the pair {% $ %}([(xn,Tn);...;(x1,T1)],T){% $ %}.
    Raise a user error if not enough products. *)
-val decompose_prod_n : int -> constr -> (Name.t * constr) list * constr
+val decompose_prod_n : int -> constr -> (Name.t * Sorts.relevance * constr) list * constr
 
 (** Given a positive integer {% $ %}n{% $ %}, decompose a lambda term
    {% $ %}[x_1:T_1]..[x_n:T_n]T{% $ %} into the pair {% $ %}([(x_n,T_n);...;(x_1,T_1)],T){% $ %}.
    Raise a user error if not enough lambdas. *)
-val decompose_lam_n : int -> constr -> (Name.t * constr) list * constr
+val decompose_lam_n : int -> constr -> (Name.t * Sorts.relevance * constr) list * constr
 
 (** Extract the premisses and the conclusion of a term of the form
    "(xi:Ti) ... (xj:=cj:Tj) ..., T" where T is not a product nor a let *)
@@ -341,8 +341,8 @@ val isArity : types -> bool
 type ('constr, 'types) kind_of_type =
   | SortType   of Sorts.t
   | CastType   of 'types * 'types
-  | ProdType   of Name.t * 'types * 'types
-  | LetInType  of Name.t * 'constr * 'types * 'types
+  | ProdType   of Name.t * Sorts.relevance * 'types * 'types
+  | LetInType  of Name.t * Sorts.relevance * 'constr * 'types * 'types
   | AtomicType of 'constr * 'constr array
 
 val kind_of_type : types -> (constr, types) kind_of_type
@@ -391,11 +391,11 @@ val mkType : Univ.Universe.t -> types
 [@@ocaml.deprecated "Alias for Constr.mkType"]
 val mkCast : constr * cast_kind * constr -> constr
 [@@ocaml.deprecated "Alias for Constr"]
-val mkProd : Name.t * types * types -> types
+val mkProd : Name.t * Sorts.relevance * types * types -> types
 [@@ocaml.deprecated "Alias for Constr"]
-val mkLambda : Name.t * types * constr -> constr
+val mkLambda : Name.t * Sorts.relevance * types * constr -> constr
 [@@ocaml.deprecated "Alias for Constr"]
-val mkLetIn : Name.t * constr * types * constr -> constr
+val mkLetIn : Name.t * Sorts.relevance * constr * types * constr -> constr
 [@@ocaml.deprecated "Alias for Constr"]
 val mkApp : constr * constr array -> constr
 [@@ocaml.deprecated "Alias for Constr"]
@@ -524,6 +524,7 @@ type case_info = Constr.case_info =
     ci_npar        : int;
     ci_cstr_ndecls : int array;
     ci_cstr_nargs  : int array;
+    ci_relevance   : Sorts.relevance;
     ci_pp_info     : Constr.case_printing
   }
 [@@ocaml.deprecated "Alias for Constr.case_info"]
@@ -556,9 +557,9 @@ type ('constr, 'types, 'sort, 'univs) kind_of_term =
   | Evar      of 'constr Constr.pexistential
   | Sort      of 'sort
   | Cast      of 'constr * Constr.cast_kind * 'types
-  | Prod      of Name.t * 'types * 'types
-  | Lambda    of Name.t * 'types * 'constr
-  | LetIn     of Name.t * 'constr * 'types * 'constr
+  | Prod      of Name.t * Sorts.relevance * 'types * 'types
+  | Lambda    of Name.t * Sorts.relevance * 'types * 'constr
+  | LetIn     of Name.t * Sorts.relevance * 'constr * 'types * 'constr
   | App       of 'constr * 'constr array
   | Const     of (Constant.t * 'univs)
   | Ind       of (inductive * 'univs)

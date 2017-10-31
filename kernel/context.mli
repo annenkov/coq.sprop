@@ -30,8 +30,8 @@ sig
   sig
     (* local declaration *)
     type ('constr, 'types) pt =
-    | LocalAssum of Name.t * 'types            (** name, type *)
-    | LocalDef of Name.t * 'constr * 'types   (** name, value, type *)
+    | LocalAssum of Name.t * Sorts.relevance * 'types            (** name, type *)
+    | LocalDef of Name.t * Sorts.relevance * 'constr * 'types   (** name, value, type *)
 
     type t = (Constr.constr, Constr.types) pt
 
@@ -43,6 +43,8 @@ sig
 
     (** Return the type of the name bound by a given declaration. *)
     val get_type : ('c, 't) pt -> 't
+
+    val get_relevance : ('c, 't) pt -> Sorts.relevance
 
     (** Set the name that is bound by a given declaration. *)
     val set_name : Name.t -> ('c, 't) pt -> ('c, 't) pt
@@ -84,7 +86,7 @@ sig
     (** Reduce all terms in a given declaration to a single value. *)
     val fold_constr : ('c -> 'a -> 'a) -> ('c, 'c) pt -> 'a -> 'a
 
-    val to_tuple : ('c, 't) pt -> Name.t * 'c option * 't
+    val to_tuple : ('c, 't) pt -> Name.t * Sorts.relevance * 'c option * 't
   end
 
   (** Rel-context is represented as a list of declarations.
@@ -148,8 +150,8 @@ sig
   module Declaration :
   sig
     type ('constr, 'types) pt =
-      | LocalAssum of Id.t * 'types             (** identifier, type *)
-      | LocalDef of Id.t * 'constr * 'types    (** identifier, value, type *)
+      | LocalAssum of Id.t * Sorts.relevance * 'types             (** identifier, type *)
+      | LocalDef of Id.t * Sorts.relevance * 'constr * 'types    (** identifier, value, type *)
 
     type t = (Constr.constr, Constr.types) pt
 
@@ -161,6 +163,8 @@ sig
 
     (** Return the type of the name bound by a given declaration. *)
     val get_type : ('c, 't) pt -> 't
+
+    val get_relevance : ('c, 't) pt -> Sorts.relevance
 
     (** Set the identifier that is bound by a given declaration. *)
     val set_id : Id.t -> ('c, 't) pt -> ('c, 't) pt
@@ -202,8 +206,8 @@ sig
     (** Reduce all terms in a given declaration to a single value. *)
     val fold_constr : ('c -> 'a -> 'a) -> ('c, 'c) pt -> 'a -> 'a
 
-    val to_tuple : ('c, 't) pt -> Id.t * 'c option * 't
-    val of_tuple : Id.t * 'c option * 't -> ('c, 't) pt
+    val to_tuple : ('c, 't) pt -> Id.t * Sorts.relevance * 'c option * 't
+    val of_tuple : Id.t * Sorts.relevance * 'c option * 't -> ('c, 't) pt
 
     (** Convert [Rel.Declaration.t] value to the corresponding [Named.Declaration.t] value.
         The function provided as the first parameter determines how to translate "names" to "ids". *)
@@ -265,8 +269,8 @@ sig
   module Declaration :
   sig
     type ('constr, 'types) pt =
-      | LocalAssum of Id.t list * 'types
-      | LocalDef of Id.t list * 'constr * 'types
+      | LocalAssum of (Id.t * Sorts.relevance) list * 'types
+      | LocalDef of (Id.t * Sorts.relevance) list * 'constr * 'types
 
     type t = (Constr.constr, Constr.types) pt
 

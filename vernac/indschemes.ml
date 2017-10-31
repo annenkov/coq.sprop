@@ -462,7 +462,7 @@ let build_combined_scheme env schemes =
     evdref := evd; (c, Typeops.type_of_constant_in env c)) schemes in
   let find_inductive ty =
     let (ctx, arity) = decompose_prod ty in
-    let (_, last) = List.hd ctx in
+    let (_, _, last) = List.hd ctx in
       match Constr.kind last with
 	| App (ind, args) ->
 	    let ind = destInd ind in
@@ -490,7 +490,7 @@ let build_combined_scheme env schemes =
   in
   let ctx, _ =
     list_split_rev_at prods
-      (List.rev_map (fun (x, y) -> LocalAssum (x, y)) ctx) in
+      (List.rev_map (fun (x, r, y) -> LocalAssum (x, r, y)) ctx) in
   let typ = List.fold_left (fun d c -> Term.mkProd_wo_LetIn c d) concl_typ ctx in
   let body = it_mkLambda_or_LetIn concl_bod ctx in
   (!evdref, body, typ)

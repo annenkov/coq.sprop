@@ -453,7 +453,7 @@ let argnames_of_global r =
   let typ, _ = Global.type_of_global_in_context env r in
   let rels,_ =
     decompose_prod (Reduction.whd_all env typ) in
-  List.rev_map fst rels
+  List.rev_map pi1 rels
 
 let msg_of_implicit = function
   | Kimplicit (r,i) ->

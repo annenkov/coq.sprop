@@ -452,8 +452,8 @@ let is_ineq (h,t) =
 
 let list_of_sign s =
   let open Context.Named.Declaration in
-  List.map (function LocalAssum (name, typ) -> name, typ
-                   | LocalDef (name, _, typ) -> name, typ)
+  List.map (function LocalAssum (name, _, typ) -> name, typ
+                   | LocalDef (name, _, _, typ) -> name, typ)
            s;;
 
 let mkAppL a =

@@ -103,10 +103,10 @@ let rec infer_fterm cv_pb infos variances hd stk =
     let variances = infer_fterm CONV infos variances c [] in
     infer_stack infos variances stk
   | FLambda _ ->
-    let (_,ty,bd) = destFLambda mk_clos hd in
+    let (_,_,ty,bd) = destFLambda mk_clos hd in
     let variances = infer_fterm CONV infos variances ty [] in
     infer_fterm CONV infos variances bd []
-  | FProd (_,dom,codom) ->
+  | FProd (_,_,dom,codom) ->
     let variances = infer_fterm CONV infos variances dom [] in
     infer_fterm cv_pb infos variances codom []
   | FInd (ind, u) ->
@@ -125,7 +125,7 @@ let rec infer_fterm cv_pb infos variances hd stk =
         infer_constructor_instance_eq (info_env infos) variances ctor nargs u
     in
     infer_stack infos variances stk
-  | FFix ((_,(_,tys,cl)),e) | FCoFix ((_,(_,tys,cl)),e) ->
+  | FFix ((_,(_,_,tys,cl)),e) | FCoFix ((_,(_,_,tys,cl)),e) ->
     let n = Array.length cl in
     let variances = infer_vect infos variances (Array.map (mk_clos e) tys) in
     let le = Esubst.subs_liftn n e in
@@ -177,7 +177,7 @@ let infer_arity_constructor env variances arcn is_arity params =
   in
   let infer_typ typ (env,variances) =
     match typ with
-    | Context.Rel.Declaration.LocalAssum (_, typ') ->
+    | Context.Rel.Declaration.LocalAssum (_, _, typ') ->
       (Environ.push_rel typ env, basic_check env variances typ')
     | Context.Rel.Declaration.LocalDef _ -> assert false
   in

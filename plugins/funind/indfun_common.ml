@@ -528,7 +528,7 @@ let decompose_lam_n sigma n =
   let rec lamdec_rec l n c =
     if Int.equal n 0 then l,c
     else match EConstr.kind sigma c with
-      | Lambda (x,t,c) -> lamdec_rec ((x,t)::l) (n-1) c
+      | Lambda (x,r,t,c) -> lamdec_rec ((x,r,t)::l) (n-1) c
       | Cast (c,_,_)     -> lamdec_rec l n c
       | _ -> CErrors.user_err Pp.(str "decompose_lam_n: not enough abstractions")
   in
@@ -538,7 +538,7 @@ let lamn n env b =
   let open EConstr in
   let rec lamrec = function
     | (0, env, b)        -> b
-    | (n, ((v,t)::l), b) -> lamrec (n-1,  l, mkLambda (v,t,b))
+    | (n, ((v,r,t)::l), b) -> lamrec (n-1,  l, mkLambda (v,r,t,b))
     | _ -> assert false
   in
   lamrec (n,env,b)
@@ -551,7 +551,7 @@ let prodn n env b =
   let open EConstr in
   let rec prodrec = function
     | (0, env, b)        -> b
-    | (n, ((v,t)::l), b) -> prodrec (n-1,  l, mkProd (v,t,b))
+    | (n, ((v,r,t)::l), b) -> prodrec (n-1,  l, mkProd (v,r,t,b))
     | _ -> assert false
   in
   prodrec (n,env,b)

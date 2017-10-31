@@ -81,8 +81,8 @@ let push_rel = push_rel
 
 let push_rel_context ctxt x = Context.Rel.fold_outside push_rel ctxt ~init:x
 
-let push_rec_types (lna,typarray,_) env =
-  let ctxt = Array.map2_i (fun i na t -> LocalAssum (na, lift i t)) lna typarray in
+let push_rec_types (lna,r,typarray,_) env =
+  let ctxt = Array.map2_i (fun i na t -> LocalAssum (na, r.(i), lift i t)) lna typarray in
   Array.fold_left (fun e assum -> push_rel assum e) env ctxt
 
 let fold_rel_context f env ~init =
@@ -409,7 +409,7 @@ let really_needed env needed =
         let globc =
           match decl with
             | LocalAssum _ -> Id.Set.empty
-            | LocalDef (_,c,_) -> global_vars_set env c in
+            | LocalDef (_,_,c,_) -> global_vars_set env c in
         Id.Set.union
           (global_vars_set env (get_type decl))
           (Id.Set.union globc need)

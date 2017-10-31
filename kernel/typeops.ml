@@ -6,6 +6,8 @@
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
+(** TODO check relevance marks *)
+
 open CErrors
 open Util
 open Names
@@ -45,10 +47,17 @@ let check_type env c t =
 
 (* This should be a type intended to be assumed. The error message is
    not as useful as for [type_judgment]. *)
-let check_assumption env t ty =
-  try let _ = check_type env t ty in t
+let infer_assumption env t ty =
+  try
+    let s = check_type env t ty in
+    t, (match s with Sorts.SProp -> Irrelevant | _ -> Relevant)
   with TypeError _ ->
     error_assumption env (make_judge t ty)
+
+let check_assumption env r t ty =
+  let t, r' = infer_assumption env t ty in
+  if not (r == r') then error_bad_relevance env;
+  t
 
 (************************************************)
 (* Incremental typing rules: builds a typing judgment given the *)
@@ -103,7 +112,7 @@ let check_hyps_inclusion env f c sign =
             (* This is wrong, because we don't know if the body is
                needed or not for typechecking: *) ()
         | LocalDef _, LocalAssum _ -> raise NotConvertible
-        | LocalDef (_,b2,_), LocalDef (_,b1,_) -> conv env b2 b1);
+        | LocalDef (_,_,b2,_), LocalDef (_,_,b1,_) -> conv env b2 b1);
       with Not_found | NotConvertible | Option.Heterogeneous ->
         error_reference_variables env id (f c))
     sign
@@ -140,8 +149,8 @@ let type_of_constant_in env (kn,u as cst) =
   and no upper constraint exists on the sort $s$, we don't need to compute $s$
 *)
 
-let type_of_abstraction env name var ty =
-  mkProd (name, var, ty)
+let type_of_abstraction env name r var ty =
+  mkProd (name, r, var, ty)
 
 (* Type of an application. *)
 
@@ -154,7 +163,7 @@ let type_of_apply env func funt argsv argstv =
     if Int.equal i len then typ
     else 
       (match kind (whd_all env typ) with
-      | Prod (_,c1,c2) ->
+      | Prod (_,_,c1,c2) ->
 	let arg = argsv.(i) and argt = argstv.(i) in
 	  (try
 	     let () = conv_leq false env argt c1 in
@@ -284,16 +293,6 @@ let check_branch_types env (ind,u) c ct lft explft =
     | Invalid_argument _ ->
         error_number_branches env (make_judge c ct) (Array.length explft)
 
-let type_of_case env ci p pt c ct lf lft =
-  let (pind, _ as indspec) =
-    try find_rectype env ct
-    with Not_found -> error_case_not_inductive env (make_judge c ct) in
-  let () = check_case_info env pind ci in
-  let (bty,rslty) =
-    type_case_branches env indspec (make_judge p pt) c in
-  let () = check_branch_types env pind c ct lft bty in
-  rslty
-
 let type_of_projection env p c ct =
   let pb = lookup_projection p env in
   let (ind,u), args =
@@ -320,6 +319,8 @@ let check_fixpoint env lna lar vdef vdeft =
 
 (************************************************************************)
 (************************************************************************)
+
+let check_relevance env s r = if not (Sorts.relevance_of_sort s == r) then error_bad_relevance env
 
 (* The typing machine. *)
     (* ATTENTION : faudra faire le typage du contexte des Const,
@@ -359,23 +360,26 @@ let rec execute env cstr =
 
           type_of_apply env f ft args argst
 
-    | Lambda (name,c1,c2) ->
-      let _ = execute_is_type env c1 in
-      let env1 = push_rel (LocalAssum (name,c1)) env in
+    | Lambda (name,r,c1,c2) ->
+      let s = execute_is_type env c1 in
+      check_relevance env s r;
+      let env1 = push_rel (LocalAssum (name,r,c1)) env in
       let c2t = execute env1 c2 in
-        type_of_abstraction env name c1 c2t
+        type_of_abstraction env name r c1 c2t
 
-    | Prod (name,c1,c2) ->
+    | Prod (name,r,c1,c2) ->
       let vars = execute_is_type env c1 in
-      let env1 = push_rel (LocalAssum (name,c1)) env in
+      check_relevance env vars r;
+      let env1 = push_rel (LocalAssum (name,r,c1)) env in
       let vars' = execute_is_type env1 c2 in
         type_of_product env name vars vars'
 
-    | LetIn (name,c1,c2,c3) ->
+    | LetIn (name,r,c1,c2,c3) ->
       let c1t = execute env c1 in
-      let _c2s = execute_is_type env c2 in
+      let c2s = execute_is_type env c2 in
+      check_relevance env c2s r;
       let () = check_cast env c1 c1t DEFAULTcast c2 in
-      let env1 = push_rel (LocalDef (name,c1,c2)) env in
+      let env1 = push_rel (LocalDef (name,r,c1,c2)) env in
       let c3t = execute env1 c3 in
 	subst1 c1 c3t
 
@@ -419,15 +423,27 @@ and execute_is_type env constr =
   let t = execute env constr in
     check_type env constr t
 
-and execute_recdef env (names,lar,vdef) i =
+and execute_recdef env (names,r,lar,vdef) i =
   let lart = execute_array env lar in
-  let lara = Array.map2 (check_assumption env) lar lart in
-  let env1 = push_rec_types (names,lara,vdef) env in
+  let lara = Array.map3 (check_assumption env) r lar lart in
+  let env1 = push_rec_types (names,r,lara,vdef) env in
   let vdeft = execute_array env1 vdef in
   let () = check_fixpoint env1 names lara vdef vdeft in
-    (lara.(i),(names,lara,vdef))
+    (lara.(i),(names,r,lara,vdef))
 
 and execute_array env = Array.map (execute env)
+
+and type_of_case env ci p pt c ct lf lft =
+  let (pind, pis as indspec) =
+    try find_rectype env ct
+    with Not_found -> error_case_not_inductive env (make_judge c ct) in
+  let _, sp = dest_arity env pt in
+  let () = check_case_info env pind (Sorts.relevance_of_sort sp) ci in
+  let (bty,rslty) =
+    type_case_branches env indspec (make_judge p pt) c in
+  let () = check_branch_types env pind c ct lft bty in
+  rslty
+
 
 (* Derived functions *)
 let infer env constr =
@@ -441,7 +457,7 @@ let infer =
   else (fun b c -> infer b c)
 
 let assumption_of_judgment env {uj_val=c; uj_type=t} =
-  check_assumption env c t
+  infer_assumption env c t
 
 let type_judgment env {uj_val=c; uj_type=t} =
   let s = check_type env c t in
@@ -460,11 +476,13 @@ let infer_v env cv =
 
 let infer_local_decl env id = function
   | Entries.LocalDefEntry c ->
-      let t = execute env c in
-      RelDecl.LocalDef (Name id, c, t)
+    let t = execute env c in
+    let r = Retypeops.relevance_of_term env c in
+    RelDecl.LocalDef (Name id, r, c, t)
   | Entries.LocalAssumEntry c ->
-      let t = execute env c in
-      RelDecl.LocalAssum (Name id, check_assumption env c t)
+    let t = execute env c in
+    let t, r = infer_assumption env c t in
+    RelDecl.LocalAssum (Name id, r, t)
 
 let infer_local_decls env decls =
   let rec inferec env = function
@@ -496,17 +514,17 @@ let judge_of_apply env funj argjv =
   let args, argtys = dest_judgev argjv in
   make_judge (mkApp (funj.uj_val, args)) (type_of_apply env funj.uj_val funj.uj_type args argtys)
 
-let judge_of_abstraction env x varj bodyj =
-  make_judge (mkLambda (x, varj.utj_val, bodyj.uj_val))
-             (type_of_abstraction env x varj.utj_val bodyj.uj_type)
+(* let judge_of_abstraction env x varj bodyj = *)
+(*   make_judge (mkLambda (x, varj.utj_val, bodyj.uj_val)) *)
+(*              (type_of_abstraction env x varj.utj_val bodyj.uj_type) *)
 
-let judge_of_product env x varj outj =
-  make_judge (mkProd (x, varj.utj_val, outj.utj_val))
-             (mkSort (sort_of_product env varj.utj_type outj.utj_type))
+(* let judge_of_product env x varj outj = *)
+(*   make_judge (mkProd (x, varj.utj_val, outj.utj_val)) *)
+(*              (mkSort (sort_of_product env varj.utj_type outj.utj_type)) *)
 
-let judge_of_letin env name defj typj j =
-  make_judge (mkLetIn (name, defj.uj_val, typj.utj_val, j.uj_val))
-             (subst1 defj.uj_val j.uj_type)
+(* let judge_of_letin env name defj typj j = *)
+(*   make_judge (mkLetIn (name, defj.uj_val, typj.utj_val, j.uj_val)) *)
+(*              (subst1 defj.uj_val j.uj_type) *)
 
 let judge_of_cast env cj k tj =
   let () = check_cast env cj.uj_val cj.uj_type k tj.utj_val in

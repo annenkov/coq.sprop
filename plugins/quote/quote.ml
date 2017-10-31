@@ -227,7 +227,7 @@ let compute_ivs f cs gl =
   let body = Environ.constant_value_in (Global.env()) (cst, u) in
   let body = EConstr.of_constr body in
   match decomp_term sigma body with
-    | Fix(([| len |], 0), ([| name |], [| typ |], [| body2 |])) ->
+    | Fix(([| len |], 0), ([| name |], [| r |], [| typ |], [| body2 |])) ->
         let (args3, body3) = decompose_lam sigma body2 in
         let nargs3 = List.length args3 in
         let is_conv = Reductionops.is_conv env sigma in
@@ -245,7 +245,7 @@ let compute_ivs f cs gl =
            (* REL 1 to REL nargsi are argsi (reverse order) *)
            (* First we test if the RHS is the RHS for constants *)
                    if isRel sigma bodyi && Int.equal (destRel sigma bodyi) 1 then
-                     c_lhs := Some (compute_lhs sigma (snd (List.hd args3))
+                     c_lhs := Some (compute_lhs sigma (pi3 (List.hd args3))
                                       i nargsi)
            (* Then we test if the RHS is the RHS for variables *)
                    else begin match decompose_app sigma bodyi with
@@ -253,12 +253,12 @@ let compute_ivs f cs gl =
                          when isRel sigma a3 && isRel sigma a4 && is_conv vmf
                            (Lazy.force coq_varmap_find) ->
                              v_lhs := Some (compute_lhs sigma
-                                              (snd (List.hd args3))
+                                              (pi3 (List.hd args3))
                                               i nargsi)
            (* Third case: this is a normal LHS-RHS *)
                      | _ ->
                          n_lhs_rhs :=
-                         (compute_lhs sigma (snd (List.hd args3)) i nargsi,
+                         (compute_lhs sigma (pi3 (List.hd args3)) i nargsi,
                           compute_rhs env sigma bodyi (nargs3 + nargsi + 1))
                          :: !n_lhs_rhs
                    end)
@@ -268,7 +268,7 @@ let compute_ivs f cs gl =
 
 	      (* The Cases predicate is a lambda; we assume no dependency *)
 	      let p = match EConstr.kind sigma p with
-		| Lambda (_,_,p) -> Termops.pop p
+                | Lambda (_,_,_,p) -> Termops.pop p
 		| _ -> p
 	      in
 

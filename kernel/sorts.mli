@@ -21,6 +21,8 @@ val set  : t
 val prop : t
 val type1  : t
 
+val super : t -> t
+
 val equal : t -> t -> bool
 val compare : t -> t -> int
 val hash : t -> int
@@ -42,3 +44,11 @@ end
 
 val univ_of_sort : t -> Univ.Universe.t
 val sort_of_univ : Univ.Universe.t -> t
+
+(** On binders: is this variable proof relevant *)
+type relevance = Relevant | Irrelevant
+
+val relevance_equal : relevance -> relevance -> bool
+
+val relevance_of_sort : t -> relevance
+val relevance_of_sort_family : family -> relevance

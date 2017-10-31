@@ -178,16 +178,16 @@ let rec pattern_filter pat ref env sigma typ =
   let typ = Termops.strip_outer_cast sigma typ in
   if Constr_matching.is_matching env sigma pat typ then true
   else match EConstr.kind sigma typ with
-  | Prod (_, _, typ)
-  | LetIn (_, _, _, typ) -> pattern_filter pat ref env sigma typ
+  | Prod (_, _, _, typ)
+  | LetIn (_, _, _, _, typ) -> pattern_filter pat ref env sigma typ
   | _ -> false
 
 let rec head_filter pat ref env sigma typ =
   let typ = Termops.strip_outer_cast sigma typ in
   if Constr_matching.is_matching_head env sigma pat typ then true
   else match EConstr.kind sigma typ with
-  | Prod (_, _, typ)
-  | LetIn (_, _, _, typ) -> head_filter pat ref env sigma typ
+  | Prod (_, _, _, typ)
+  | LetIn (_, _, _, _, typ) -> head_filter pat ref env sigma typ
   | _ -> false
 
 let full_name_of_reference ref =

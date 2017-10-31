@@ -43,6 +43,8 @@ val constrained_type_of_inductive : env -> mind_specif puniverses -> types const
 val constrained_type_of_inductive_knowing_parameters :
   env -> mind_specif puniverses -> types Lazy.t array -> types constrained
 
+val relevance_of_inductive : env -> inductive -> Sorts.relevance
+
 val type_of_inductive : env -> mind_specif puniverses -> types
 
 val type_of_inductive_knowing_parameters :
@@ -91,7 +93,7 @@ val inductive_sort_family : one_inductive_body -> Sorts.family
 
 (** Check a [case_info] actually correspond to a Case expression on the
    given inductive type. *)
-val check_case_info : env -> pinductive -> case_info -> unit
+val check_case_info : env -> pinductive -> Sorts.relevance -> case_info -> unit
 
 (** {6 Guard conditions for fix and cofix-points. } *)
 

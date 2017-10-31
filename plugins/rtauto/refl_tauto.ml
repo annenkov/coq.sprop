@@ -98,7 +98,7 @@ let rec make_form atom_env gls term =
   let cciterm=special_whd gls term  in
   let sigma = Tacmach.project gls in
     match EConstr.kind sigma cciterm with
-	Prod(_,a,b) ->
+        Prod(_,_,a,b) ->
 	  if noccurn sigma 1 b &&
 	    Retyping.get_sort_family_of
 	    (pf_env gls) sigma a == InProp
@@ -134,9 +134,9 @@ let rec make_form atom_env gls term =
 
 let rec make_hyps atom_env gls lenv = function
     [] -> []
-  | LocalDef (_,body,typ)::rest ->
+  | LocalDef (_,_,body,typ)::rest ->
       make_hyps atom_env gls (typ::body::lenv) rest
-  | LocalAssum (id,typ)::rest ->
+  | LocalAssum (id,_,typ)::rest ->
       let hrec=
 	make_hyps atom_env gls (typ::lenv) rest in
 	if List.exists (fun c -> Termops.local_occur_var Evd.empty (** FIXME *) id c) lenv ||

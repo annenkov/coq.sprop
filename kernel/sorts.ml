@@ -33,6 +33,10 @@ let sort_of_univ u =
   else if is_type0_univ u then set
   else Type u
 
+let super = function
+  | SProp | Prop | Set -> type1
+  | Type u -> Type (Universe.super u)
+
 let compare s1 s2 =
   if s1 == s2 then 0 else
     match s1, s2 with
@@ -109,3 +113,18 @@ module Hsorts =
     end)
 
 let hcons = Hashcons.simple_hcons Hsorts.generate Hsorts.hcons hcons_univ
+
+(** On binders: is this variable proof relevant *)
+type relevance = Relevant | Irrelevant
+
+let relevance_equal r1 r2 = match r1,r2 with
+  | Relevant, Relevant | Irrelevant, Irrelevant -> true
+  | (Relevant | Irrelevant), _ -> false
+
+let relevance_of_sort_family = function
+  | InSProp -> Irrelevant
+  | _ -> Relevant
+
+let relevance_of_sort = function
+  | SProp -> Irrelevant
+  | _ -> Relevant

@@ -300,13 +300,13 @@ struct
       Meta meta
     | Case (ci,c1,c2,ca)     ->
       Term(DCase(ci,pat_of_constr c1,pat_of_constr c2,Array.map pat_of_constr ca))
-    | Fix ((ia,i),(_,ta,ca)) ->
+    | Fix ((ia,i),(_,_,ta,ca)) ->
       Term(DFix(ia,i,Array.map pat_of_constr ta, Array.map pat_of_constr ca))
-    | CoFix (i,(_,ta,ca))    ->
+    | CoFix (i,(_,_,ta,ca))    ->
       Term(DCoFix(i,Array.map pat_of_constr ta,Array.map pat_of_constr ca))
     | Cast (c,_,_)   -> pat_of_constr c
-    | Lambda (_,t,c) -> Term(DLambda (pat_of_constr t, pat_of_constr c))
-    | (Prod (_,_,_) | LetIn(_,_,_,_))   ->
+    | Lambda (_,_,t,c) -> Term(DLambda (pat_of_constr t, pat_of_constr c))
+    | (Prod _ | LetIn _)   ->
       let (ctx,c) = ctx_of_constr (Term DNil) c in Term (DCtx (ctx,c))
     | App (f,ca)     ->
       Array.fold_left (fun c a -> Term (DApp (c,a)))
@@ -315,8 +315,8 @@ struct
         Term (DApp (Term (DRef (ConstRef (Projection.constant p))), pat_of_constr c))
 
     and ctx_of_constr ctx c = match Constr.kind c with
-    | Prod (_,t,c)   -> ctx_of_constr (Term(DCons((pat_of_constr t,None),ctx))) c
-    | LetIn(_,d,t,c) -> ctx_of_constr (Term(DCons((pat_of_constr t, Some (pat_of_constr d)),ctx))) c
+    | Prod (_,_,t,c)   -> ctx_of_constr (Term(DCons((pat_of_constr t,None),ctx))) c
+    | LetIn(_,_,d,t,c) -> ctx_of_constr (Term(DCons((pat_of_constr t, Some (pat_of_constr d)),ctx))) c
     | _ -> ctx,pat_of_constr c
     in
     pat_of_constr c

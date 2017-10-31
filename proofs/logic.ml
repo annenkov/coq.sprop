@@ -469,12 +469,12 @@ and mk_arggoals sigma goal goalacc funty allargs =
     let t = whd_all (Goal.V82.env sigma goal) sigma (EConstr.of_constr funty) in
     let t = EConstr.Unsafe.to_constr t in
     let rec collapse t = match kind t with
-    | LetIn (_, c1, _, b) -> collapse (subst1 c1 b)
+    | LetIn (_, _, c1, _, b) -> collapse (subst1 c1 b)
     | _ -> t
     in
     let t = collapse t in
     match kind t with
-    | Prod (_, c1, b) ->
+    | Prod (_, _, c1, b) ->
       let (acc, hargty, sigma, arg) = mk_refgoals sigma goal goalacc c1 harg in
       (acc, subst1 harg b, sigma), arg
     | _ ->

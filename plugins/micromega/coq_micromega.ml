@@ -1223,7 +1223,7 @@ struct
           let g,env,tg = xparse_formula env tg b in
           mkformula_binary mkIff term f g,env,tg
         | _ -> parse_atom env tg term)
-      | Term.Prod(typ,a,b) when EConstr.Vars.noccurn sigma 1 b ->
+      | Term.Prod(typ,_,a,b) when EConstr.Vars.noccurn sigma 1 b ->
         let f,env,tg = xparse_formula env tg a in
         let g,env,tg = xparse_formula env tg b in
         mkformula_binary mkI term f g,env,tg
@@ -1385,7 +1385,7 @@ let dump_rexpr = lazy
 let prodn n env b =
   let rec prodrec = function
     | (0, env, b)        -> b
-    | (n, ((v,t)::l), b) -> prodrec (n-1,  l, EConstr.mkProd (v,t,b))
+    | (n, ((v,t)::l), b) -> prodrec (n-1,  l, EConstr.mkProd (v,Sorts.Relevant,t,b))
     | _ -> assert false
   in
   prodrec (n,env,b)
@@ -1435,8 +1435,8 @@ let make_goal_of_formula sigma dexpr form =
     | FF  -> Lazy.force coq_False
     | C(x,y) -> EConstr.mkApp(Lazy.force coq_and,[|xdump pi xi x ; xdump pi xi y|])
     | D(x,y) -> EConstr.mkApp(Lazy.force coq_or,[| xdump pi xi x ; xdump pi xi y|])
-    | I(x,_,y) -> EConstr.mkArrow (xdump pi xi x) (xdump (pi+1) (xi+1) y)
-    | N(x) -> EConstr.mkArrow (xdump pi xi x) (Lazy.force coq_False)
+    | I(x,_,y) -> EConstr.mkArrow (xdump pi xi x) Sorts.Relevant (xdump (pi+1) (xi+1) y)
+    | N(x) -> EConstr.mkArrow (xdump pi xi x) Sorts.Relevant (Lazy.force coq_False)
     | A(x,_,_) -> dump_cstr xi x
     | X(t) -> let idx = Env.get_rank props sigma t in
               EConstr.mkRel (pi+idx) in 
@@ -1469,7 +1469,7 @@ let make_goal_of_formula sigma dexpr form =
     | (e::l) ->
        let (name,expr,typ) = e in
         xset (EConstr.mkNamedLetIn
-               (Names.Id.of_string name)
+               (Names.Id.of_string name) Sorts.Relevant
                expr typ acc) l in
     xset concl l
 
@@ -1854,7 +1854,7 @@ let abstract_formula hyps f =
       | I(f1,hyp,f2) ->
 	  (match xabs f1 , hyp, xabs f2 with
 	    | X a1      , Some _ , af2    ->  af2
-	    | X a1      , None   , X a2   -> X (EConstr.mkArrow a1 a2)
+            | X a1      , None   , X a2   -> X (EConstr.mkArrow a1 Sorts.Relevant a2)
 	    |   af1     ,  _     , af2    -> I(af1,hyp,af2)
 	  )
       | FF -> FF

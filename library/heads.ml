@@ -65,7 +65,7 @@ let kind_of_head env t =
        with Not_found ->
         (* a goal variable *)
         match lookup_named id env with
-        | LocalDef (_,c,_) -> aux k l c b
+        | LocalDef (_,_,c,_) -> aux k l c b
         | LocalAssum _ -> NotImmediatelyComputableHead)
   | Const (cst,_) ->
       (try on_subterm k l b (constant_head cst)
@@ -78,7 +78,7 @@ let kind_of_head env t =
       if b then NotImmediatelyComputableHead else ConstructorHead
   | Sort _ | Ind _ | Prod _ -> RigidHead RigidType
   | Cast (c,_,_) -> aux k l c b
-  | Lambda (_,_,c) ->
+  | Lambda (_,_,_,c) ->
     begin match l with
     | [] ->
       let () = assert (not b) in
@@ -135,7 +135,7 @@ let compute_head = function
      | Some (c, _) -> kind_of_head env c)
 | EvalVarRef id ->
     (match Global.lookup_named id with
-     | LocalDef (_,c,_) when not (Decls.variable_opacity id) ->
+     | LocalDef (_,_,c,_) when not (Decls.variable_opacity id) ->
            kind_of_head (Global.env()) c
      | _ ->
            RigidHead (RigidVar id))

@@ -166,19 +166,19 @@ let fold_constr_with_full_binders g f n acc c =
   match Constr.kind c with
   | Rel _ | Meta _ | Var _   | Sort _ | Const _ | Ind _ | Construct _ -> acc
   | Cast (c,_, t) -> f n (f n acc c) t
-  | Prod (na,t,c) -> f (g (LocalAssum (na,t)) n) (f n acc t) c
-  | Lambda (na,t,c) -> f (g (LocalAssum (na,t)) n) (f n acc t) c
-  | LetIn (na,b,t,c) -> f (g (LocalDef (na,b,t)) n) (f n (f n acc b) t) c
+  | Prod (na,r,t,c) -> f (g (LocalAssum (na,r,t)) n) (f n acc t) c
+  | Lambda (na,r,t,c) -> f (g (LocalAssum (na,r,t)) n) (f n acc t) c
+  | LetIn (na,r,b,t,c) -> f (g (LocalDef (na,r,b,t)) n) (f n (f n acc b) t) c
   | App (c,l) -> Array.fold_left (f n) (f n acc c) l
   | Proj (p,c) -> f n acc c
   | Evar (_,l) -> Array.fold_left (f n) acc l
   | Case (_,p,c,bl) -> Array.fold_left (f n) (f n (f n acc p) c) bl
-  | Fix (_,(lna,tl,bl)) ->
-      let n' = CArray.fold_left2 (fun c n t -> g (LocalAssum (n,t)) c) n lna tl in
+  | Fix (_,(lna,rl,tl,bl)) ->
+      let n' = CArray.fold_left3 (fun c n r t -> g (LocalAssum (n,r,t)) c) n lna rl tl in
       let fd = Array.map2 (fun t b -> (t,b)) tl bl in
       Array.fold_left (fun acc (t,b) -> f n' (f n acc t) b) acc fd
-  | CoFix (_,(lna,tl,bl)) ->
-      let n' = CArray.fold_left2 (fun c n t -> g (LocalAssum (n,t)) c) n lna tl in
+  | CoFix (_,(lna,rl,tl,bl)) ->
+      let n' = CArray.fold_left3 (fun c n r t -> g (LocalAssum (n,r,t)) c) n lna rl tl in
       let fd = Array.map2 (fun t b -> (t,b)) tl bl in
       Array.fold_left (fun acc (t,b) -> f n' (f n acc t) b) acc fd
 
@@ -197,7 +197,7 @@ let rec traverse current ctx accu t = match Constr.kind t with
 | Case (_,oty,c,[||]) ->
     (* non dependent match on an inductive with no constructors *)
     begin match Constr.(kind oty, kind c) with
-    | Lambda(_,_,oty), Const (kn, _)
+    | Lambda(_,_,_,oty), Const (kn, _)
       when Vars.noccurn 1 oty &&
       not (Declareops.constant_has_body (lookup_constant kn)) ->
         let body () = Option.map fst (Global.body_of_constant_body (lookup_constant kn)) in
@@ -258,8 +258,9 @@ and traverse_inductive (curr, data, ax2ty) mind obj =
        Array.fold_left (fun accu oib ->
           let pspecif = Univ.in_punivs (mib, oib) in
           let ind_type = Inductive.type_of_inductive global_env pspecif in
+          let indr = oib.mind_relevant in
           let ind_name = Name oib.mind_typename in
-          Context.Rel.add (Context.Rel.Declaration.LocalAssum (ind_name, ind_type)) accu)
+          Context.Rel.add (Context.Rel.Declaration.LocalAssum (ind_name, indr, ind_type)) accu)
           Context.Rel.empty mib.mind_packets
      in
      (* For each inductive, collects references in their arity and in the type
@@ -295,11 +296,11 @@ and traverse_inductive (curr, data, ax2ty) mind obj =
 and traverse_context current ctx accu ctxt =
   snd (Context.Rel.fold_outside (fun decl (ctx, accu) ->
     match decl with
-     | Context.Rel.Declaration.LocalDef (_,c,t) ->
+     | Context.Rel.Declaration.LocalDef (_,_,c,t) ->
           let accu = traverse current ctx (traverse current ctx accu t) c in
           let ctx = Context.Rel.add decl ctx in
           ctx, accu
-     | Context.Rel.Declaration.LocalAssum (_,t) ->
+     | Context.Rel.Declaration.LocalAssum (_,_,t) ->
           let accu = traverse current ctx accu t in
           let ctx = Context.Rel.add decl ctx in
            ctx, accu) ctxt ~init:(ctx, accu))

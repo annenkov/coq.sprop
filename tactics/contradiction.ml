@@ -19,10 +19,10 @@ module NamedDecl = Context.Named.Declaration
 
 (* Absurd *)
 
-let mk_absurd_proof coq_not t =
+let mk_absurd_proof coq_not r t =
   let id = Namegen.default_dependent_ident in
-  mkLambda (Names.Name id,mkApp(coq_not,[|t|]),
-    mkLambda (Names.Name id,t,mkApp (mkRel 2,[|mkRel 1|])))
+  mkLambda (Names.Name id,Sorts.Relevant,mkApp(coq_not,[|t|]),
+    mkLambda (Names.Name id,r,t,mkApp (mkRel 2,[|mkRel 1|])))
 
 let absurd c =
   Proofview.Goal.enter begin fun gl ->
@@ -31,12 +31,13 @@ let absurd c =
     let j = Retyping.get_judgment_of env sigma c in
     let sigma, j = Coercion.inh_coerce_to_sort env sigma j in
     let t = j.Environ.utj_val in
+    let r = Sorts.relevance_of_sort j.Environ.utj_type in
     Proofview.Unsafe.tclEVARS sigma <*>
     Tacticals.New.pf_constr_of_global (build_coq_not ()) >>= fun coqnot ->
     Tacticals.New.pf_constr_of_global (build_coq_False ()) >>= fun coqfalse ->
     Tacticals.New.tclTHENLIST [
       elim_type coqfalse;
-      Simple.apply (mk_absurd_proof coqnot t)
+      Simple.apply (mk_absurd_proof coqnot r t)
     ]
   end
 
@@ -70,7 +71,7 @@ let contradiction_context =
 	  if is_empty_type sigma typ then
 	    simplest_elim (mkVar id)
 	  else match EConstr.kind sigma typ with
-	  | Prod (na,t,u) when is_empty_type sigma u ->
+          | Prod (na,_,t,u) when is_empty_type sigma u ->
              let is_unit_or_eq =
                if use_negated_unit_or_eq_type () then match_with_unit_or_eq_type sigma t
                else None in
@@ -104,7 +105,7 @@ let contradiction_context =
 
 let is_negation_of env sigma typ t =
   match EConstr.kind sigma (whd_all env sigma t) with
-    | Prod (na,t,u) ->
+    | Prod (na,_,t,u) ->
       is_empty_type sigma u && is_conv_leq env sigma typ t
     | _ -> false
 

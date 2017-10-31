@@ -119,7 +119,7 @@ let get_source lp source =
        let rec aux = function
          | [] -> raise Not_found
          | LocalDef _ :: lt -> aux lt
-         | LocalAssum (_,t1) :: lt ->
+         | LocalAssum (_,_,t1) :: lt ->
             let cl1,u1,lv1 = find_class_type Evd.empty (EConstr.of_constr t1) in
             cl1,lt,lv1,1
        in aux lp
@@ -128,7 +128,7 @@ let get_source lp source =
        let rec aux acc = function
          | [] -> raise Not_found
          | LocalDef _ as decl :: lt -> aux (decl::acc) lt
-         | LocalAssum (_,t1) as decl :: lt ->
+         | LocalAssum (_,_,t1) as decl :: lt ->
             try
               let cl1,u1,lv1 = find_class_type Evd.empty (EConstr.of_constr t1) in
               if cl_typ_eq cl cl1 then cl1,acc,lv1,Context.Rel.nhyps lt+1
@@ -185,14 +185,14 @@ let build_id_coercion idf_opt source poly =
   let lams,t = decompose_lam_assum c in
   let val_f =
     it_mkLambda_or_LetIn
-      (mkLambda (Name Namegen.default_dependent_ident,
+      (mkLambda (Name Namegen.default_dependent_ident,Sorts.Relevant,
 		 applistc vs (Context.Rel.to_extended_list mkRel 0 lams),
 		 mkRel 1))
        lams
   in
   let typ_f =
     List.fold_left (fun d c -> Term.mkProd_wo_LetIn c d)
-      (mkProd (Anonymous, applistc vs (Context.Rel.to_extended_list mkRel 0 lams), lift 1 t))
+      (mkProd (Anonymous, Sorts.Relevant, applistc vs (Context.Rel.to_extended_list mkRel 0 lams), lift 1 t))
       lams
   in
   (* juste pour verification *)

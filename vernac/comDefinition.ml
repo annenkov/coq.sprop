@@ -23,10 +23,10 @@ open Context.Rel.Declaration
 let rec under_binders env sigma f n c =
   if Int.equal n 0 then f env sigma (EConstr.of_constr c) else
     match Constr.kind c with
-      | Lambda (x,t,c) ->
-          mkLambda (x,t,under_binders (push_rel (LocalAssum (x,t)) env) sigma f (n-1) c)
-      | LetIn (x,b,t,c) ->
-          mkLetIn (x,b,t,under_binders (push_rel (LocalDef (x,b,t)) env) sigma f (n-1) c)
+      | Lambda (x,r,t,c) ->
+          mkLambda (x,r,t,under_binders (push_rel (LocalAssum (x,r,t)) env) sigma f (n-1) c)
+      | LetIn (x,r,b,t,c) ->
+          mkLetIn (x,r,b,t,under_binders (push_rel (LocalDef (x,r,b,t)) env) sigma f (n-1) c)
       | _ -> assert false
 
 let red_constant_entry n ce sigma = function

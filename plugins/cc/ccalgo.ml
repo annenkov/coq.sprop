@@ -417,11 +417,11 @@ let new_representative typ =
 
 let _A_ = Name (Id.of_string "A")
 let _B_ = Name (Id.of_string "A")
-let _body_ =  mkProd(Anonymous,mkRel 2,mkRel 2)
+let _body_ =  mkProd(Anonymous,Sorts.Relevant,mkRel 2,mkRel 2)
 
 let cc_product s1 s2 =
-  mkLambda(_A_,mkSort(s1),
-	   mkLambda(_B_,mkSort(s2),_body_))
+  mkLambda(_A_,Sorts.Relevant,mkSort(s1),
+           mkLambda(_B_,Sorts.Relevant,mkSort(s2),_body_))
 
 let rec constr_of_term = function
     Symb s-> applist_projection s []
@@ -465,12 +465,12 @@ let rec canonize_name sigma c =
       | Construct (((kn,i),j),u) ->
 	  let canon_mind = MutInd.make1 (MutInd.canonical kn) in
 	    mkConstructU (((canon_mind,i),j),u)
-      | Prod (na,t,ct) ->
-	  mkProd (na,func t, func ct)
-      | Lambda (na,t,ct) ->
-	  mkLambda (na, func t,func ct)
-      | LetIn (na,b,t,ct) ->
-	  mkLetIn (na, func b,func t,func ct)
+      | Prod (na,r,t,ct) ->
+          mkProd (na,r,func t, func ct)
+      | Lambda (na,r,t,ct) ->
+          mkLambda (na, r, func t,func ct)
+      | LetIn (na,r,b,t,ct) ->
+          mkLetIn (na, r, func b,func t,func ct)
       | App (ct,l) ->
 	  mkApp (func ct,Array.smartmap func l)
       | Proj(p,c) ->
@@ -820,7 +820,7 @@ let __eps__ = Id.of_string "_eps_"
 let new_state_var typ state =
   let id = pf_get_new_id __eps__ state.gls in
   let {it=gl ; sigma=sigma} = state.gls in
-  let gls = Goal.V82.new_goal_with sigma gl [Context.Named.Declaration.LocalAssum (id,typ)] in
+  let gls = Goal.V82.new_goal_with sigma gl [Context.Named.Declaration.LocalAssum (id,Sorts.Relevant,typ)] in
     state.gls<- gls;
     id
 
@@ -829,7 +829,7 @@ let complete_one_class state i=
       Partial pac ->
 	let rec app t typ n =
 	  if n<=0 then t else
-	    let _,etyp,rest= destProd typ in
+            let _,_,etyp,rest= destProd typ in
 	    let id = new_state_var etyp state in
 		app (Appli(t,Eps id)) (substl [mkVar id] rest) (n-1) in
 	let _c = pf_unsafe_type_of state.gls

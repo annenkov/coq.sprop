@@ -226,7 +226,7 @@ let compute_induction_names = compute_induction_names_gen true
 let compute_constructor_signatures isrec ((_,k as ity),u) =
   let rec analrec c recargs =
     match Constr.kind c, recargs with
-    | Prod (_,_,c), recarg::rest ->
+    | Prod (_,_,_,c), recarg::rest ->
         let rest = analrec c rest in
         begin match Declareops.dest_recarg recarg with
         | Norec | Imbr _  -> true :: rest
@@ -234,7 +234,7 @@ let compute_constructor_signatures isrec ((_,k as ity),u) =
             if isrec && Int.equal j k then true :: true :: rest
             else true :: rest
         end
-    | LetIn (_,_,_,c), rest -> false :: analrec c rest
+    | LetIn (_,_,_,_,c), rest -> false :: analrec c rest
     | _, [] -> []
     | _ -> anomaly (Pp.str "compute_constructor_signatures.")
   in

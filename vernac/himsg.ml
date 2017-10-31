@@ -34,7 +34,7 @@ let contract env sigma lc =
   let l = ref [] in
   let contract_context decl env =
     match decl with
-      | LocalDef (_,c',_) when isRel sigma c' ->
+      | LocalDef (_,_,c',_) when isRel sigma c' ->
           l := (Vars.substl !l c') :: !l;
           env
       | _ ->
@@ -106,9 +106,9 @@ let canonize_constr sigma c =
   let dn = Name.Anonymous in
   let rec canonize_binders c =
     match EConstr.kind sigma c with
-    | Prod (_,t,b) -> mkProd(dn,t,b)
-    | Lambda (_,t,b) -> mkLambda(dn,t,b)
-    | LetIn (_,u,t,b) -> mkLetIn(dn,u,t,b)
+    | Prod (_,r,t,b) -> mkProd(dn,r,t,b)
+    | Lambda (_,r,t,b) -> mkLambda(dn,r,t,b)
+    | LetIn (_,r,u,t,b) -> mkLetIn(dn,r,u,t,b)
     | _ -> EConstr.map sigma canonize_binders c
   in
   canonize_binders c
@@ -271,7 +271,7 @@ let explain_ill_formed_branch env sigma c ci actty expty =
 let explain_generalization env sigma (name,var) j =
   let pe = pr_ne_context_of (str "In environment") env sigma in
   let pv = pr_letype_env env sigma var in
-  let (pc,pt) = pr_ljudge_env (push_rel_assum (name,var) env) sigma j in
+  let (pc,pt) = pr_ljudge_env (push_rel_assum (name,Sorts.Relevant,var) env) sigma j in
   pe ++ str "Cannot generalize" ++ brk(1,1) ++ pv ++ spc () ++
   str "over" ++ brk(1,1) ++ pc ++ str "," ++ spc () ++
   str "it has type" ++ spc () ++ pt ++
@@ -680,6 +680,9 @@ let explain_unsatisfied_constraints env sigma cst =
     Univ.pr_constraints (Termops.pr_evd_level sigma) cst ++ 
     spc () ++ str "(maybe a bugged tactic)."
 
+let explain_bad_relevance env =
+  strbrk "Bad relevance (maybe a bugged tactic)."
+
 let explain_type_error env sigma err =
   let env = make_all_name_different env sigma in
   match err with
@@ -717,6 +720,7 @@ let explain_type_error env sigma err =
       explain_wrong_case_info env ind ci
   | UnsatisfiedConstraints cst ->
       explain_unsatisfied_constraints env sigma cst
+  | BadRelevance -> explain_bad_relevance env
 
 let pr_position (cl,pos) =
   let clpos = match cl with
@@ -1308,6 +1312,7 @@ let map_ptype_error f = function
 | IllTypedRecBody (n, na, jv, t) ->
   IllTypedRecBody (n, na, Array.map (on_judgment f) jv, Array.map f t)
 | UnsatisfiedConstraints g -> UnsatisfiedConstraints g
+| BadRelevance -> BadRelevance
 
 let explain_reduction_tactic_error = function
   | Tacred.InvalidAbstraction (env,sigma,c,(env',e)) ->

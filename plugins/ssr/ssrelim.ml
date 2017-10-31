@@ -38,8 +38,8 @@ let analyze_eliminator elimty env sigma =
   | AtomicType (hd, args) when EConstr.isRel sigma hd -> 
     ctx, EConstr.destRel sigma hd, not (EConstr.Vars.noccurn sigma 1 t), Array.length args, t
   | CastType (t, _) -> loop ctx t
-  | ProdType (x, ty, t) -> loop (RelDecl.LocalAssum (x, ty) :: ctx) t
-  | LetInType (x,b,ty,t) -> loop (RelDecl.LocalDef (x, b, ty) :: ctx) (EConstr.Vars.subst1 b t)
+  | ProdType (x, r, ty, t) -> loop (RelDecl.LocalAssum (x, r, ty) :: ctx) t
+  | LetInType (x,r,b,ty,t) -> loop (RelDecl.LocalDef (x, r, b, ty) :: ctx) (EConstr.Vars.subst1 b t)
   | _ ->
     let env' = EConstr.push_rel_context ctx env in
     let t' = Reductionops.whd_all env' sigma t in
@@ -59,7 +59,7 @@ let analyze_eliminator elimty env sigma =
        occur_rec n term; !count in
      let occurr2 n t = count_occurn n t > 1 in
      not (List.for_all_i 
-       (fun i (_,rd) -> pred_id <= i || not (occurr2 (pred_id - i) rd))
+       (fun i (_,_,rd) -> pred_id <= i || not (occurr2 (pred_id - i) rd))
        1 (assums_of_rel_context ctx))
   in
   n_elim_args - pred_id, n_elim_args, is_rec_elim, elim_is_dep, n_pred_args,
@@ -71,9 +71,9 @@ let subgoals_tys sigma (relctx, concl) =
         let ty = Context.Rel.Declaration.get_type hd in
         if EConstr.Vars.noccurn sigma cur_depth concl &&
            List.for_all_i (fun i -> function
-             | Context.Rel.Declaration.LocalAssum(_, t) ->
+             | Context.Rel.Declaration.LocalAssum(_, _, t) ->
                 EConstr.Vars.noccurn sigma i t
-             | Context.Rel.Declaration.LocalDef (_, b, t) ->
+             | Context.Rel.Declaration.LocalDef (_, _, b, t) ->
                 EConstr.Vars.noccurn sigma i t && EConstr.Vars.noccurn sigma i b) 1 rest
         then aux (cur_depth - 1) (ty :: acc) rest
         else aux (cur_depth - 1) acc rest
@@ -324,14 +324,14 @@ let ssrelim ?(ind=ref None) ?(is_case=false) ?ist deps what ?elim eqid elim_intr
         let gl, t = pfe_type_of gl c in
         let gen_eq_tac, gl =
           let refl = EConstr.mkApp (eq, [|t; c; c|]) in
-          let new_concl = EConstr.mkArrow refl (EConstr.Vars.lift 1 (pf_concl orig_gl)) in 
+          let new_concl = EConstr.mkArrow refl Sorts.Relevant (EConstr.Vars.lift 1 (pf_concl orig_gl)) in
           let new_concl = fire_subst gl new_concl in
           let erefl, gl = mkRefl t c gl in
           let erefl = fire_subst gl erefl in
           apply_type new_concl [erefl], gl in
         let rel = k + if c_is_head_p then 1 else 0 in
         let src, gl = mkProt EConstr.mkProp EConstr.(mkApp (eq,[|t; c; mkRel rel|])) gl in
-        let concl = EConstr.mkArrow src (EConstr.Vars.lift 1 concl) in
+        let concl = EConstr.mkArrow src Sorts.Relevant (EConstr.Vars.lift 1 concl) in
         let clr = if deps <> [] then clr else [] in
         concl, gen_eq_tac, clr, gl
     | _ -> concl, Tacticals.tclIDTAC, clr, gl in
@@ -390,7 +390,7 @@ let injecteq_id = mk_internal_id "injection equation"
 let revtoptac n0 gl =
   let n = pf_nb_prod gl - n0 in
   let dc, cl = EConstr.decompose_prod_n_assum (project gl) n (pf_concl gl) in
-  let dc' = dc @ [Context.Rel.Declaration.LocalAssum(Name rev_id, EConstr.it_mkProd_or_LetIn cl (List.rev dc))] in
+  let dc' = dc @ [Context.Rel.Declaration.LocalAssum(Name rev_id, Sorts.Relevant, EConstr.it_mkProd_or_LetIn cl (List.rev dc))] in
   let f = EConstr.it_mkLambda_or_LetIn (mkEtaApp (EConstr.mkRel (n + 1)) (-n) 1) dc' in
   refine (EConstr.mkApp (f, [|Evarutil.mk_new_meta ()|])) gl
 
@@ -430,7 +430,7 @@ let perform_injection c gl =
     CErrors.user_err (Pp.str "can't decompose a quantified equality") else
   let cl = pf_concl gl in let n = List.length dc in
   let c_eq = mkEtaApp c n 2 in
-  let cl1 = EConstr.mkLambda EConstr.(Anonymous, mkArrow eqt cl, mkApp (mkRel 1, [|c_eq|])) in
+  let cl1 = EConstr.mkLambda EConstr.(Anonymous, Sorts.Relevant, mkArrow eqt Sorts.Relevant cl, mkApp (mkRel 1, [|c_eq|])) in
   let id = injecteq_id in
   let id_with_ebind = (EConstr.mkVar id, NoBindings) in
   let injtac = Tacticals.tclTHEN (introid id) (injectidl2rtac id id_with_ebind) in 

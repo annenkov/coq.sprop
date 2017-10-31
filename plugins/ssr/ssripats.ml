@@ -83,12 +83,12 @@ let ssrmkabs id gl =
       let (sigma, m) = Evarutil.new_evar env sigma abstract_ty in
       (sigma, (m, abstract_ty)) in
     let sigma, kont =
-      let rd = RelDecl.LocalAssum (Name id, abstract_ty) in
+      let rd = RelDecl.LocalAssum (Name id, Sorts.Relevant, abstract_ty) in
       let (sigma, ev) = Evarutil.new_evar (EConstr.push_rel rd env) sigma concl in
       (sigma, ev)
     in
 (*    pp(lazy(pr_econstr concl)); *)
-    let term = EConstr.(mkApp (mkLambda(Name id,abstract_ty,kont) ,[|abstract_proof|])) in
+    let term = EConstr.(mkApp (mkLambda(Name id,Sorts.Relevant,abstract_ty,kont) ,[|abstract_proof|])) in
     let sigma, _ = Typing.type_of env sigma term in
     (sigma, term)
   end in
@@ -131,7 +131,7 @@ let delayed_clear force rest clr gl =
 let with_defective maintac deps clr ist gl =
   let top_id =
     match EConstr.kind_of_type (project gl) (pf_concl gl) with
-    | ProdType (Name id, _, _)
+    | ProdType (Name id, _, _, _)
       when has_discharged_tag (Id.to_string id) -> id
     | _ -> top_id in
   let top_gen = mkclr clr, cpattern_of_id top_id in
@@ -141,7 +141,7 @@ let with_defective_a maintac deps clr ist gl =
   let sigma = sig_sig gl in
   let top_id =
     match EConstr.kind_of_type sigma (without_ctx pf_concl gl) with
-    | ProdType (Name id, _, _)
+    | ProdType (Name id, _, _, _)
       when has_discharged_tag (Id.to_string id) -> id
     | _ -> top_id in
   let top_gen = mkclr clr, cpattern_of_id top_id in
@@ -281,7 +281,7 @@ let elim_intro_tac ipats ?ist what eqid ssrelim is_rec clr gl =
     match eqid with 
     | Some (IPatId ipat) when not is_rec -> 
        let rec intro_eq gl = match EConstr.kind_of_type (project gl) (pf_concl gl) with
-         | ProdType (_, src, tgt) -> 
+         | ProdType (_, _, src, tgt) ->
             (match EConstr.kind_of_type (project gl) src with
              | AtomicType (hd, _) when EConstr.eq_constr (project gl) hd protectC -> 
                 Tacticals.tclTHENLIST [unprotecttac; introid ipat] gl
@@ -310,7 +310,7 @@ let elim_intro_tac ipats ?ist what eqid ssrelim is_rec clr gl =
            let gl, case_ty = pfe_type_of gl case in 
            let refl = EConstr.mkApp (eq, [|EConstr.Vars.lift 1 case_ty; EConstr.mkRel 1; EConstr.Vars.lift 1 case|]) in
            let new_concl = fire_subst gl
-                                      EConstr.(mkProd (Name (name gl), case_ty, mkArrow refl (Vars.lift 2 concl))) in 
+                                      EConstr.(mkProd (Name (name gl), Sorts.Relevant, case_ty, mkArrow refl Sorts.Relevant (Vars.lift 2 concl))) in
            let erefl, gl = mkRefl case_ty case gl in
            let erefl = fire_subst gl erefl in
            apply_type new_concl [case;erefl] gl in
@@ -342,13 +342,13 @@ let mkEq dir cl c t n gl =
   let eqargs = [|t; c; c|] in eqargs.(dir_org dir) <- mkRel n;
   let eq, gl = mkCoqEq gl in
   let refl, gl = mkRefl t c gl in
-  mkArrow (mkApp (eq, eqargs)) (EConstr.Vars.lift 1 cl), refl, gl
+  mkArrow (mkApp (eq, eqargs)) Sorts.Relevant (EConstr.Vars.lift 1 cl), refl, gl
 
 let pushmoveeqtac cl c gl =
   let open EConstr in
-  let x, t, cl1 = destProd (project gl) cl in
+  let x, r, t, cl1 = destProd (project gl) cl in
   let cl2, eqc, gl = mkEq R2L cl1 c t 1 gl in
-  apply_type (mkProd (x, t, cl2)) [c; eqc] gl
+  apply_type (mkProd (x, r, t, cl2)) [c; eqc] gl
 
 let eqmovetac _ gen ist gl =
   let cl, c, _, gl = pf_interp_gen ist gl false gen in pushmoveeqtac cl c gl

@@ -124,14 +124,14 @@ let etype_of_evar evs hyps concl =
 	let s' = Int.Set.union s s' in
 	let trans' = Id.Set.union trans trans' in
 	  (match decl with
-            | LocalDef (id,c,_) ->
+            | LocalDef (id,r,c,_) ->
 		let c', s'', trans'' = subst_evar_constr evs n mkVar c in
 		let c' = subst_vars acc 0 c' in
-		  mkNamedProd_or_LetIn (LocalDef (id, c', t'')) rest,
+                  mkNamedProd_or_LetIn (LocalDef (id, r, c', t'')) rest,
 		Int.Set.union s'' s',
 		Id.Set.union trans'' trans'
-	    | LocalAssum (id,_) ->
-		mkNamedProd_or_LetIn (LocalAssum (id, t'')) rest, s', trans')
+            | LocalAssum (id,r,_) ->
+                mkNamedProd_or_LetIn (LocalAssum (id, r, t'')) rest, s', trans')
     | [] ->
 	let t', s, trans = subst_evar_constr evs n mkVar concl in
 	  subst_vars acc 0 t', s, trans
@@ -146,7 +146,7 @@ let rec chop_product n t =
   if Int.equal n 0 then Some t
   else
     match Constr.kind t with
-      | Prod (_, _, b) ->  if noccurn 1 b then chop_product (pred n) (pop b) else None
+      | Prod (_, _, _, b) ->  if noccurn 1 b then chop_product (pred n) (pop b) else None
       | _ -> None
 
 let evar_dependencies evm oev =
@@ -386,8 +386,8 @@ let subst_deps expand obls deps t =
 
 let rec prod_app t n =
   match Constr.kind (EConstr.Unsafe.to_constr (Termops.strip_outer_cast Evd.empty (EConstr.of_constr t))) (** FIXME *) with
-    | Prod (_,_,b) -> subst1 n b
-    | LetIn (_, b, t, b') -> prod_app (subst1 b b') n
+    | Prod (_,_,_,b) -> subst1 n b
+    | LetIn (_, _, b, t, b') -> prod_app (subst1 b b') n
     | _ ->
 	user_err ~hdr:"prod_app"
 	  (str"Needed a product, but didn't find one" ++ fnl ())
@@ -492,9 +492,9 @@ let declare_definition prg =
 
 let rec lam_index n t acc =
   match Constr.kind t with
-    | Lambda (Name n', _, _) when Id.equal n n' ->
+    | Lambda (Name n', _, _, _) when Id.equal n n' ->
       acc
-    | Lambda (_, _, b) ->
+    | Lambda (_, _, _, b) ->
 	lam_index n b (succ acc)
     | _ -> raise Not_found
 
@@ -516,20 +516,25 @@ let mk_proof c = ((c, Univ.ContextSet.empty), Safe_typing.empty_private_constant
 let declare_mutual_definition l =
   let len = List.length l in
   let first = List.hd l in
-  let fixdefs, fixtypes, fiximps =
-    List.split3
+  let fixdefs, fixrs, fixtypes, fiximps =
+    let env = Global.env () in
+    List.split4
       (List.map (fun x -> 
-	let subs, typ = (subst_body true x) in
-	let term = snd (Reductionops.splay_lam_n (Global.env ()) Evd.empty len (EConstr.of_constr subs)) in
-	let typ = snd (Reductionops.splay_prod_n (Global.env ()) Evd.empty len (EConstr.of_constr typ)) in
-	let term = EConstr.Unsafe.to_constr term in
-	let typ = EConstr.Unsafe.to_constr typ in
-	  x.prg_reduce term, x.prg_reduce typ, x.prg_implicits) l)
+           let subs, typ = (subst_body true x) in
+           let r = Retyping.relevance_of_type env (Evd.from_env env) (EConstr.of_constr typ) in
+           let term = snd (Reductionops.splay_lam_n env Evd.empty len
+                             (EConstr.of_constr subs)) in
+           let typ = snd (Reductionops.splay_prod_n env Evd.empty len
+                            (EConstr.of_constr typ)) in
+           let term = EConstr.Unsafe.to_constr term in
+           let typ = EConstr.Unsafe.to_constr typ in
+           x.prg_reduce term, r, x.prg_reduce typ, x.prg_implicits) l)
   in
 (*   let fixdefs = List.map reduce_fix fixdefs in *)
   let fixkind = Option.get first.prg_fixkind in
   let arrrec, recvec = Array.of_list fixtypes, Array.of_list fixdefs in
-  let fixdecls = (Array.of_list (List.map (fun x -> Name x.prg_name) l), arrrec, recvec) in
+  let rvec = Array.of_list fixrs in
+  let fixdecls = (Array.of_list (List.map (fun x -> Name x.prg_name) l), rvec, arrrec, recvec) in
   let (local,poly,kind) = first.prg_kind in
   let fixnames = first.prg_deps in
   let opaque = first.prg_opaque in
@@ -568,19 +573,19 @@ let decompose_lam_prod c ty =
   let open Context.Rel.Declaration in
   let rec aux ctx c ty =
     match Constr.kind c, Constr.kind ty with
-    | LetIn (x, b, t, c), LetIn (x', b', t', ty)
+    | LetIn (x, r, b, t, c), LetIn (x', r', b', t', ty)
 	 when Constr.equal b b' && Constr.equal t t' ->
-       let ctx' = Context.Rel.add (LocalDef (x,b',t')) ctx in
+       let ctx' = Context.Rel.add (LocalDef (x,r',b',t')) ctx in
        aux ctx' c ty
-    | _, LetIn (x', b', t', ty) ->
-       let ctx' = Context.Rel.add (LocalDef (x',b',t')) ctx in
+    | _, LetIn (x', r', b', t', ty) ->
+       let ctx' = Context.Rel.add (LocalDef (x',r',b',t')) ctx in
        aux ctx' (lift 1 c) ty
-    | LetIn (x, b, t, c), _ ->
-       let ctx' = Context.Rel.add (LocalDef (x,b,t)) ctx in
+    | LetIn (x, r, b, t, c), _ ->
+       let ctx' = Context.Rel.add (LocalDef (x,r,b,t)) ctx in
        aux ctx' c (lift 1 ty)
-    | Lambda (x, b, t), Prod (x', b', t')
+    | Lambda (x, r, b, t), Prod (x', r', b', t')
        (* By invariant, must be convertible *) ->
-       let ctx' = Context.Rel.add (LocalAssum (x,b')) ctx in
+       let ctx' = Context.Rel.add (LocalAssum (x,r',b')) ctx in
        aux ctx' t t'
     | Cast (c, _, _), _ -> aux ctx c ty
     | _, _ -> ctx, c, ty

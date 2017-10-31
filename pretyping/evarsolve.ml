@@ -73,8 +73,8 @@ let refresh_universes ?(status=univ_rigid) ?(onlyalg=false) ?(refreshset=false)
        refresh_sort status ~direction s
       | _ -> t
       end
-    | Prod (na,u,v) -> 
-      mkProd (na, u, refresh ~onlyalg status ~direction v)
+    | Prod (na,r,u,v) ->
+      mkProd (na, r, u, refresh ~onlyalg status ~direction v)
     | _ -> t
   (** Refresh the types of evars under template polymorphic references *)
   and refresh_term_evars onevars top t =
@@ -156,7 +156,7 @@ let recheck_applications conv_algo env evdref t =
        let rec aux i ty =
 	 if i < Array.length argsty then
 	 match EConstr.kind !evdref (whd_all env !evdref ty) with
-	 | Prod (na, dom, codom) ->
+         | Prod (na, _, dom, codom) ->
 	    (match conv_algo env !evdref Reduction.CUMUL argsty.(i) dom with
 	     | Success evd -> evdref := evd;
 			     aux (succ i) (subst1 args.(i) codom)
@@ -239,7 +239,7 @@ let noccur_evar env evd evk c =
          (cache := Int.Set.add (i-k) !cache; occur_rec false acc (lift i (EConstr.of_constr (get_type decl))));
        (match decl with
         | LocalAssum _ -> ()
-        | LocalDef (_,b,_) -> cache := Int.Set.add (i-k) !cache; occur_rec false acc (lift i (EConstr.of_constr b)))
+        | LocalDef (_,_,b,_) -> cache := Int.Set.add (i-k) !cache; occur_rec false acc (lift i (EConstr.of_constr b)))
   | Proj (p,c) -> occur_rec true acc c
   | _ -> iter_with_full_binders evd (fun rd (k,env) -> (succ k, push_rel rd env))
     (occur_rec check_types) acc c
@@ -300,7 +300,7 @@ let compute_var_aliases sign sigma =
   List.fold_right (fun decl aliases ->
     let id = get_id decl in
     match decl with
-    | LocalDef (_,t,_) ->
+    | LocalDef (_,_,t,_) ->
         (match EConstr.kind sigma t with
         | Var id' ->
             let aliases_of_id =
@@ -316,7 +316,7 @@ let compute_rel_aliases var_aliases rels sigma =
 	 (fun decl (n,aliases) ->
 	  (n-1,
 	   match decl with
-	   | LocalDef (_,t,u) ->
+           | LocalDef (_,_,t,u) ->
 	      (match EConstr.kind sigma t with
 	       | Var id' ->
 		  let aliases_of_n =
@@ -377,7 +377,7 @@ let extend_alias sigma decl { var_aliases; rel_aliases } =
       rel_aliases Int.Map.empty in
   let rel_aliases =
     match decl with
-    | LocalDef(_,t,_) ->
+    | LocalDef(_,_,t,_) ->
         (match EConstr.kind sigma t with
         | Var id' ->
             let aliases_of_binder =
@@ -604,7 +604,7 @@ let make_projectable_subst aliases sigma evi args =
     List.fold_right
       (fun decl (args,all,cstrs) ->
         match decl,args with
-        | LocalAssum (id,c), a::rest ->
+        | LocalAssum (id,_,c), a::rest ->
             let cstrs =
               let a',args = decompose_app_vect sigma a in
               match EConstr.kind sigma a' with
@@ -613,7 +613,7 @@ let make_projectable_subst aliases sigma evi args =
                   Constrmap.add (fst cstr) ((args,id)::l) cstrs
               | _ -> cstrs in
             (rest,Id.Map.add id [a,normalize_alias_opt sigma aliases a,id] all,cstrs)
-        | LocalDef (id,c,_), a::rest ->
+        | LocalDef (id,_,c,_), a::rest ->
             (match EConstr.kind sigma c with
             | Var id' ->
                 let idc = normalize_alias_var sigma evar_aliases id' in
@@ -685,7 +685,7 @@ let materialize_evar define_fun env evd k (evk1,args1) ty_in_env =
   let open Context.Rel.Declaration in
   let (sign2,filter2,inst2_in_env,inst2_in_sign,_,evd,_) =
     List.fold_right (fun d (sign,filter,inst_in_env,inst_in_sign,env,evd,avoid) ->
-      let LocalAssum (na,t_in_env) | LocalDef (na,_,t_in_env) = d in
+      let LocalAssum (na,r,t_in_env) | LocalDef (na,r,_,t_in_env) = d in
       let id = next_name_away na avoid in
       let evd,t_in_sign =
         let s = Retyping.get_sort_of env evd t_in_env in
@@ -694,11 +694,11 @@ let materialize_evar define_fun env evd k (evk1,args1) ty_in_env =
         define_evar_from_virtual_equation define_fun env evd src t_in_env
           ty_t_in_sign sign filter inst_in_env in
       let evd,d' = match d with
-      | LocalAssum _ -> evd, Context.Named.Declaration.LocalAssum (id,t_in_sign)
-      | LocalDef (_,b,_) ->
+      | LocalAssum _ -> evd, Context.Named.Declaration.LocalAssum (id,r,t_in_sign)
+      | LocalDef (_,_,b,_) ->
           let evd,b = define_evar_from_virtual_equation define_fun env evd src b
             t_in_sign sign filter inst_in_env in
-          evd, Context.Named.Declaration.LocalDef (id,b,t_in_sign) in
+          evd, Context.Named.Declaration.LocalDef (id,r,b,t_in_sign) in
       (push_named_context_val d' sign, Filter.extend 1 filter,
        (mkRel 1)::(List.map (lift 1) inst_in_env),
        (mkRel 1)::(List.map (lift 1) inst_in_sign),
@@ -1026,7 +1026,7 @@ let closure_of_filter evd evk = function
                     match decl with
                     | LocalAssum _ ->
                        false
-                    | LocalDef (_,c,_) ->
+                    | LocalDef (_,_,c,_) ->
                       let c = EConstr.of_constr c in
                        not (isRel evd c || isVar evd c)
   in
@@ -1175,7 +1175,7 @@ let rec is_constrainable_in top evd k (ev,(fv_rels,fv_ids) as g) t =
       let params = fst (Array.chop n args) in
       Array.for_all (is_constrainable_in false evd k g) params
   | Ind _ -> Array.for_all (is_constrainable_in false evd k g) args
-  | Prod (na,t1,t2) -> is_constrainable_in false evd k g t1 && is_constrainable_in false evd k g t2
+  | Prod (na,_,t1,t2) -> is_constrainable_in false evd k g t1 && is_constrainable_in false evd k g t2
   | Evar (ev',_) -> top || not (Evar.equal ev' ev) (*If ev' needed, one may also try to restrict it*)
   | Var id -> Id.Set.mem id fv_ids
   | Rel n -> n <= k || Int.Set.mem n fv_rels
@@ -1492,16 +1492,16 @@ let rec invert_definition conv_algo choose env evd pbty (evk,argsv as ev) rhs =
         let open Context.Rel.Declaration in
         (match Environ.lookup_rel (i-k) env' with
         | LocalAssum _ -> project_variable (RelAlias (i-k))
-        | LocalDef (_,b,_) ->
+        | LocalDef (_,_,b,_) ->
           try project_variable (RelAlias (i-k))
           with NotInvertibleUsingOurAlgorithm _ -> imitate envk (lift i (EConstr.of_constr b)))
     | Var id ->
         (match Environ.lookup_named id env' with
         | LocalAssum _ -> project_variable (VarAlias id)
-        | LocalDef (_,b,_) ->
+        | LocalDef (_,_,b,_) ->
           try project_variable (VarAlias id)
           with NotInvertibleUsingOurAlgorithm _ -> imitate envk (EConstr.of_constr b))
-    | LetIn (na,b,u,c) ->
+    | LetIn (na,_,b,u,c) ->
         imitate envk (subst1 b c)
     | Evar (evk',args' as ev') ->
         if Evar.equal evk evk' then raise (OccurCheckIn (evd,rhs));

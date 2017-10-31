@@ -20,11 +20,11 @@ val pr_sort_family : Sorts.family -> Pp.t
 val pr_fix : ('a -> Pp.t) -> ('a, 'a) pfixpoint -> Pp.t
 
 (** about contexts *)
-val push_rel_assum : Name.t * types -> env -> env
-val push_rels_assum : (Name.t * Constr.types) list -> env -> env
-val push_named_rec_types : Name.t array * Constr.types array * 'a -> env -> env
+val push_rel_assum : Name.t * Sorts.relevance * types -> env -> env
+val push_rels_assum : (Name.t * Sorts.relevance * Constr.types) list -> env -> env
+val push_named_rec_types : Name.t array * Sorts.relevance array * Constr.types array * 'a -> env -> env
 
-val lookup_rel_id : Id.t -> ('c, 't) Context.Rel.pt -> int * 'c option * 't
+val lookup_rel_id : Id.t -> ('c, 't) Context.Rel.pt -> int * Sorts.relevance * 'c option * 't
 (** Associates the contents of an identifier in a [rel_context]. Raise
     [Not_found] if there is no such identifier. *)
 
@@ -37,8 +37,8 @@ val rel_list : int -> int -> constr list
 (** iterators/destructors on terms *)
 val mkProd_or_LetIn : rel_declaration -> types -> types
 val mkProd_wo_LetIn : rel_declaration -> types -> types
-val it_mkProd : types -> (Name.t * types) list -> types
-val it_mkLambda : constr -> (Name.t * types) list -> constr
+val it_mkProd : types -> (Name.t * Sorts.relevance * types) list -> types
+val it_mkLambda : constr -> (Name.t * Sorts.relevance * types) list -> constr
 val it_mkProd_or_LetIn : types -> rel_context -> types
 val it_mkProd_wo_LetIn : types -> rel_context -> types
 val it_mkLambda_or_LetIn : Constr.constr -> Context.Rel.t -> Constr.constr
@@ -237,7 +237,7 @@ val add_vname : Id.Set.t -> Name.t -> Id.Set.t
 
 (** other signature iterators *)
 val process_rel_context : (rel_declaration -> env -> env) -> env -> env
-val assums_of_rel_context : ('c, 't) Context.Rel.pt -> (Name.t * 't) list
+val assums_of_rel_context : ('c, 't) Context.Rel.pt -> (Name.t * Sorts.relevance * 't) list
 val lift_rel_context : int -> Context.Rel.t -> Context.Rel.t
 val substl_rel_context : Constr.constr list -> Context.Rel.t -> Context.Rel.t
 val smash_rel_context : Context.Rel.t -> Context.Rel.t (** expand lets in context *)

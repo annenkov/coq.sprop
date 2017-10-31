@@ -40,7 +40,7 @@ let meta_succ m = m+1
 
 let rec nb_prod_after n c=
   match Constr.kind c with
-    | Prod (_,_,b) ->if n>0 then nb_prod_after (n-1) b else
+    | Prod (_,_,_,b) ->if n>0 then nb_prod_after (n-1) b else
 	1+(nb_prod_after 0 b)
     | _ -> 0
 
