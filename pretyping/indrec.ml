@@ -117,9 +117,14 @@ let mis_make_case_com dep env sigma (ind, u as pind) (mib,mip as specif) kind =
           arsign
       in
       let obj = 
-	match projs with
-	| None -> mkCase (ci, lift ndepar p,  mkRel 1,
-			  Termops.rel_vect ndepar k)
+        match projs with
+        | None ->
+          let is = if mip.mind_natural_sprop && not (Sorts.family_equal kind InSProp)
+            then
+              user_err Pp.(str "scheme SProp -> Type not done") (* TODO is important *)
+            else None
+          in
+          mkCase (ci, lift ndepar p, is, mkRel 1, Termops.rel_vect ndepar k)
 	| Some ps -> 
 	  let term = 
 	    mkApp (mkRel 2, 
@@ -345,6 +350,7 @@ let mis_make_indrec env sigma listdepkind mib u =
           let arsign,s = get_arity env indf in
           let r = Sorts.relevance_of_sort_family s in
           let depind = build_dependent_inductive env indf in
+          let indty = find_rectype env !evdref (EConstr.of_constr depind) in
           let deparsign = LocalAssum (Anonymous,r,depind)::arsign in
 
           let nonrecpar = Context.Rel.length lnonparrec in
@@ -402,11 +408,13 @@ let mis_make_indrec env sigma listdepkind mib u =
 		  ((if dep then mkLambda_name env else mkLambda)
                       (Anonymous,r,depind',concl))
 		  arsign'
-	      in
-	      let obj =
-		Inductiveops.make_case_or_project env !evdref indf ci (EConstr.of_constr pred)
-						  (EConstr.mkRel 1) (Array.map EConstr.of_constr branches)
-	      in
+              in
+              let with_is = mipi.mind_natural_sprop in
+              let obj =
+                Inductiveops.make_case_or_project env !evdref indty ci ~with_is
+                  (EConstr.of_constr pred)
+                  (EConstr.mkRel 1) (Array.map EConstr.of_constr branches)
+              in
 	      let obj = EConstr.to_constr !evdref obj in
 		it_mkLambda_or_LetIn_name env obj
 		  (Termops.lift_rel_context nrec deparsign)

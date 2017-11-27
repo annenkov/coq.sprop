@@ -364,6 +364,7 @@ and fterm =
   | FFix of fixpoint * fconstr subs
   | FCoFix of cofixpoint * fconstr subs
   | FCaseT of case_info * constr * fconstr * constr array * fconstr subs (* predicate and branches are closures *)
+  | FCaseInvert of case_info * constr * fconstr array * fconstr * constr array * fconstr subs
   | FLambda of int * (Name.t * Sorts.relevance * constr) list * constr * fconstr subs
   | FProd of Name.t * Sorts.relevance * fconstr * fconstr
   | FLetIn of Name.t * Sorts.relevance * fconstr * fconstr * constr * fconstr subs
@@ -473,7 +474,7 @@ let rec lft_fconstr n ft =
     | FCoFix(cfx,e) -> {norm=Cstr; term=FCoFix(cfx,subs_shft(n,e))}
     | FLIFT(k,m) -> lft_fconstr (n+k) m
     | FLOCKED -> assert false
-    | FFlex _ | FAtom _ | FCast _ | FApp _ | FProj _ | FCaseT _ | FProd _
+    | FFlex _ | FAtom _ | FCast _ | FApp _ | FProj _ | FCaseT _ | FCaseInvert _ | FProd _
       | FLetIn _ | FEvar _ | FCLOS _ -> {norm=ft.norm; term=FLIFT(n,ft)}
 let lift_fconstr k f =
   if Int.equal k 0 then f else lft_fconstr k f
@@ -562,9 +563,12 @@ let mk_clos_deep clos_fun env t =
     | Proj (p,c) ->
 	{ norm = Red;
 	  term = FProj (p, clos_fun env c) }
-    | Case (ci,p,c,v) ->
+    | Case (ci,p,None,c,v) ->
         { norm = Red;
-	  term = FCaseT (ci, p, clos_fun env c, v, env) }
+          term = FCaseT (ci, p, clos_fun env c, v, env) }
+    | Case (ci,p,Some is,c,v) ->
+      { norm = Red;
+        term = FCaseInvert (ci, p, Array.map (clos_fun env) is, clos_fun env c, v, env) }
     | Fix fx ->
         { norm = Cstr; term = FFix (fx, env) }
     | CoFix cfx ->
@@ -596,9 +600,13 @@ let rec to_constr constr_fun lfts v =
     | FInd op -> mkIndU op
     | FConstruct op -> mkConstructU op
     | FCaseT (ci,p,c,ve,env) ->
-	mkCase (ci, constr_fun lfts (mk_clos env p),
+        mkCase (ci, constr_fun lfts (mk_clos env p), None,
                 constr_fun lfts c,
                 Array.map (fun b -> constr_fun lfts (mk_clos env b)) ve)
+    | FCaseInvert (ci, p, is, c, ve, env) ->
+      mkCase (ci, constr_fun lfts (mk_clos env p), Some (Array.map (constr_fun lfts) is),
+              constr_fun lfts c,
+              Array.map (fun b -> constr_fun lfts (mk_clos env b)) ve)
     | FFix ((op,(lna,r,tys,bds)),e) ->
         let n = Array.length bds in
         let ftys = CArray.Fun1.map mk_clos e tys in
@@ -881,7 +889,7 @@ let rec knh info m stk =
        | Some s -> knh info c (s :: zupdate m stk))
 
 (* cases where knh stops *)
-    | (FFlex _|FLetIn _|FConstruct _|FEvar _|
+    | (FFlex _|FLetIn _|FConstruct _|FEvar _|FCaseInvert _|
        FCoFix _|FLambda _|FRel _|FAtom _|FInd _|FProd _) ->
         (m, stk)
 
@@ -890,13 +898,13 @@ and knht info e t stk =
   match kind t with
     | App(a,b) ->
         knht info e a (append_stack (mk_clos_vect e b) stk)
-    | Case(ci,p,t,br) ->
+    | Case(ci,p,None,t,br) ->
         knht info e t (ZcaseT(ci, p, br, e)::stk)
     | Fix _ -> knh info (mk_clos2 e t) stk
     | Cast(a,_,_) -> knht info e a stk
     | Rel n -> knh info (clos_rel e n) stk
     | Proj (p,c) -> knh info (mk_clos2 e t) stk
-    | (Lambda _|Prod _|Construct _|CoFix _|Ind _|
+    | (Lambda _|Prod _|Construct _|CoFix _|Ind _|Case(_,_,Some _,_,_)|
        LetIn _|Const _|Var _|Evar _|Meta _|Sort _) ->
         (mk_clos2 e t, stk)
 
@@ -954,10 +962,12 @@ let rec knr info m stk =
       (match evar_value info.i_cache ev with
           Some c -> knit info env c stk
         | None -> (m,stk))
-  | FLOCKED | FRel _ | FAtom _ | FCast _ | FFlex _ | FInd _ | FApp _ | FProj _
-    | FFix _ | FCoFix _ | FCaseT _ | FLambda _ | FProd _ | FLetIn _ | FLIFT _
-    | FCLOS _ -> (m, stk)
+  | FCaseInvert (ci,p,is,c,v,env) when red_set info.i_flags fMATCH ->
+    assert false (* TODO *)
 
+  | FLOCKED | FRel _ | FAtom _ | FCast _ | FFlex _ | FInd _ | FApp _ | FProj _
+    | FFix _ | FCoFix _ | FCaseT _ | FCaseInvert _ | FLambda _ | FProd _ | FLetIn _ | FLIFT _
+    | FCLOS _ -> (m, stk)
 
 (* Computes the weak head normal form of a term *)
 and kni info m stk =
@@ -977,7 +987,7 @@ let rec zip_term zfun m stk =
     | Zapp args :: s ->
         zip_term zfun (mkApp(m, Array.map zfun args)) s
     | ZcaseT(ci,p,br,e)::s ->
-        let t = mkCase(ci, zfun (mk_clos e p), m,
+        let t = mkCase(ci, zfun (mk_clos e p), None, m,
 		       Array.map (fun b -> zfun (mk_clos e b)) br) in
         zip_term zfun t s
     | Zproj(_,_,p)::s ->
@@ -1034,7 +1044,7 @@ and norm_head info m =
       | FProj (p,c) ->
           mkProj (p, kl info c)
       | FLOCKED | FRel _ | FAtom _ | FCast _ | FFlex _ | FInd _ | FConstruct _
-        | FApp _ | FCaseT _ | FLIFT _ | FCLOS _ -> term_of_fconstr m
+        | FApp _ | FCaseT _ | FCaseInvert _ | FLIFT _ | FCLOS _ -> term_of_fconstr m
 
 (* Initialization and then normalization *)
 

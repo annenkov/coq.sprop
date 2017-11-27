@@ -59,7 +59,7 @@ let rec relevance_of_fterm env extra lft f =
   | FProj (p, _) -> relevance_of_projection env p
   | FFix (((_,i),(_,lr,_,_)), _) -> lr.(i)
   | FCoFix ((i,(_,lr,_,_)), _) -> lr.(i)
-  | FCaseT (ci, _, _, _, _) -> ci.ci_relevance
+  | FCaseT (ci, _, _, _, _) | FCaseInvert (ci, _, _, _, _, _) -> ci.ci_relevance
   | FLambda (len, tys, bdy, e) ->
     (* TODO check order *)
     let extra = List.rev_append (List.rev_map pi2 tys) extra in
@@ -96,7 +96,7 @@ and relevance_of_term_extra env extra lft subs c =
   | Const c -> relevance_of_constant env c
   | Ind _ -> Sorts.Relevant
   | Construct c -> relevance_of_constructor env c
-  | Case (ci, _, _, _) -> ci.ci_relevance
+  | Case (ci, _, _, _, _) -> ci.ci_relevance
   | Fix ((_,i),(_,lr,_,_)) -> lr.(i)
   | CoFix (i,(_,lr,_,_)) -> lr.(i)
   | Proj (p, _) -> relevance_of_projection env p

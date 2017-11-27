@@ -1117,14 +1117,14 @@ let rec ungeneralize sigma n ng body =
   | LetIn (na,r,b,t,c) ->
       (* We traverse an alias *)
       mkLetIn (na,r,b,t,ungeneralize sigma (n+1) ng c)
-  | Case (ci,p,c,brs) ->
+  | Case (ci,p,is,c,brs) ->
       (* We traverse a split *)
       let p =
         let sign,p = decompose_lam_assum sigma p in
         let sign2,p = decompose_prod_n_assum sigma ng p in
         let p = prod_applist sigma p [mkRel (n+List.length sign+ng)] in
         it_mkLambda_or_LetIn (it_mkProd_or_LetIn p sign2) sign in
-      mkCase (ci,p,c,Array.map2 (fun q c ->
+      mkCase (ci,p,is,c,Array.map2 (fun q c ->
         let sign,b = decompose_lam_n_decls sigma q c in
         it_mkLambda_or_LetIn (ungeneralize sigma (n+q) ng b) sign)
         ci.ci_cstr_ndecls brs)
@@ -1147,7 +1147,7 @@ let rec is_dependent_generalization sigma ng body =
   | LetIn (na,_,b,t,c) ->
       (* We traverse an alias *)
       is_dependent_generalization sigma ng c
-  | Case (ci,p,c,brs) ->
+  | Case (ci,p,is,c,brs) ->
       (* We traverse a split *)
       Array.exists2 (fun q c ->
         let _,b = decompose_lam_n_decls sigma q c in
@@ -1401,46 +1401,47 @@ and match_current pb (initial,tomatch) =
 	check_all_variables pb.env !(pb.evdref) typ pb.mat;
 	compile_all_variables initial tomatch pb
     | IsInd (_,(IndType(indf,realargs) as indt),names) ->
-	let mind,_ = dest_ind_family indf in
-        let mind = Tacred.check_privacy pb.env mind in
-	let cstrs = get_constructors pb.env indf in
-	let arsign, _ = get_arity pb.env indf in
-	let eqns,onlydflt = group_equations pb (fst mind) current cstrs pb.mat in
-        let no_cstr = Int.equal (Array.length cstrs) 0 in
-	if (not no_cstr || not (List.is_empty pb.mat)) && onlydflt then
-	  compile_all_variables initial tomatch pb
-	else
-	  (* We generalize over terms depending on current term to match *)
-	  let pb,deps = generalize_problem (names,dep) pb deps in
+      let mind,params = dest_ind_family indf in
+      let mind = Tacred.check_privacy pb.env mind in
+      let cstrs = get_constructors pb.env indf in
+      let arsign, _ = get_arity pb.env indf in
+      let eqns,onlydflt = group_equations pb (fst mind) current cstrs pb.mat in
+      let no_cstr = Int.equal (Array.length cstrs) 0 in
+      if (not no_cstr || not (List.is_empty pb.mat)) && onlydflt then
+        compile_all_variables initial tomatch pb
+      else
+        (* We generalize over terms depending on current term to match *)
+        let pb,deps = generalize_problem (names,dep) pb deps in
 
-	  (* We compile branches *)
-	  let brvals = Array.map2 (compile_branch initial current realargs (names,dep) deps pb arsign) eqns cstrs in
-	  (* We build the (elementary) case analysis *)
-          let depstocheck = current::binding_vars_of_inductive !(pb.evdref) typ in
-          let brvals,tomatch,pred,inst =
-            postprocess_dependencies !(pb.evdref) depstocheck
-              brvals pb.tomatch pb.pred deps cstrs in
-          let brvals = Array.map (fun (sign,body) ->
+        (* We compile branches *)
+        let brvals = Array.map2 (compile_branch initial current realargs (names,dep) deps pb arsign) eqns cstrs in
+        (* We build the (elementary) case analysis *)
+        let depstocheck = current::binding_vars_of_inductive !(pb.evdref) typ in
+        let brvals,tomatch,pred,inst =
+          postprocess_dependencies !(pb.evdref) depstocheck
+            brvals pb.tomatch pb.pred deps cstrs in
+        let brvals = Array.map (fun (sign,body) ->
             let sign = List.map (map_name (ltac_interp_name pb.lvar)) sign in
             it_mkLambda_or_LetIn body sign) brvals in
         let (pred,typ) =
           find_predicate pb.caseloc pb.env pb.evdref
             pred current indt (names,dep) tomatch in
         let predinst = beta_applist !(pb.evdref) (pred, realargs @ [current]) in
-        let rci =
+        let rci, with_is =
           try
           let pred = Retyping.get_sort_family_of pb.env !(pb.evdref) predinst in
           if Sorts.family_equal Sorts.InSProp pred
           then
-            Sorts.Irrelevant
+            Sorts.Irrelevant, false
           else
-            Sorts.Relevant
-          with _ -> anomaly (Pp.str"WTF")
+            let _, mip = Inductive.lookup_mind_specif pb.env (fst mind) in
+            Sorts .Relevant, mip.mind_natural_sprop
+          with _ -> anomaly ~label:"cases.match_current" (Pp.str"ill typed term")
         in
         let ci = make_case_info pb.env (fst mind) rci pb.casestyle in
         let pred = nf_betaiota pb.env !(pb.evdref) pred in
         let case = Inductiveops.make_case_or_project pb.env !(pb.evdref)
-            indf ci pred current brvals
+            indt ci ~with_is pred current brvals
         in
  { uj_val = applist (case, inst);
    uj_type = prod_applist !(pb.evdref) typ inst }

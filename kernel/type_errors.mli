@@ -62,6 +62,10 @@ type ('constr, 'types) ptype_error =
       int * Name.t array * ('constr, 'types) punsafe_judgment array * 'types array
   | UnsatisfiedConstraints of Univ.Constraint.t
   | BadRelevance
+  | SPropMissingAnnot
+  | SPropUnexpectedAnnot
+  | SPropMismatchAnnot
+  | SPropIncorrectAnnot of int * 'constr * 'constr
 
 type type_error = (constr, types) ptype_error
 
@@ -109,3 +113,8 @@ val error_elim_explain : Sorts.family -> Sorts.family -> arity_error
 val error_unsatisfied_constraints : env -> Univ.Constraint.t -> 'a
 
 val error_bad_relevance : env -> 'a
+
+val error_sprop_missing_annot : env -> 'a
+val error_sprop_unexpected_annot : env -> 'a
+val error_sprop_mismatch_annot : env -> 'a
+val error_sprop_incorrect_annot : env -> int -> constr -> constr -> 'a

@@ -351,6 +351,7 @@ let in_whnf (t,stk) =
     | FConstruct _ -> no_case_available stk
     | FCoFix _ -> no_case_available stk
     | FFix(((ri,n),_),_) -> no_nth_arg_available ri.(n) stk
+    | FCaseInvert _ -> true (* probably ...*)
     | (FFlex _ | FProd _ | FEvar _ | FInd _ | FAtom _ | FRel _ | FProj _) -> true
     | FLOCKED -> assert false
 
@@ -636,12 +637,14 @@ and eqappr cv_pb l2r infos (lft1,st1) (lft2,st2) cuniv =
           convert_stacks l2r infos lft1 lft2 v1 v2 cuniv
         else raise NotConvertible
 
+    | FCaseInvert _, FCaseInvert _ -> raise NotConvertible (* TODO *)
+
      (* Should not happen because both (hd1,v1) and (hd2,v2) are in whnf *)
-     | ( (FLetIn _, _) | (FCaseT _,_) | (FApp _,_) | (FCLOS _,_) | (FLIFT _,_)
+     | ( (FLetIn _ | FCaseT _ | FApp _ | FCLOS _ | FLIFT _), _
        | (_, FLetIn _) | (_,FCaseT _) | (_,FApp _) | (_,FCLOS _) | (_,FLIFT _)
        | (FLOCKED,_) | (_,FLOCKED) ) | (FCast _, _) | (_, FCast _) -> assert false
 
-     | (FRel _ | FAtom _ | FInd _ | FFix _ | FCoFix _
+     | (FRel _ | FAtom _ | FInd _ | FFix _ | FCoFix _ | FCaseInvert _
         | FProd _ | FEvar _), _ -> raise NotConvertible
 
 and convert_stacks l2r infos lft1 lft2 stk1 stk2 cuniv =
