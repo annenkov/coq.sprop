@@ -100,7 +100,7 @@ let mis_make_case_com dep env sigma (ind, u as pind) (mib,mip as specif) kind =
       let indf' = lift_inductive_family nbprod indf in
       let arsign,sort = get_arity env indf' in
       let r = Sorts.relevance_of_sort_family sort in
-      let depind = build_dependent_inductive env indf' in
+      let depind, is = build_dependent_inductive_and_indices env indf' in
       let deparsign = LocalAssum (Anonymous,r,depind)::arsign in
 
       let rci = relevance in
@@ -121,7 +121,7 @@ let mis_make_case_com dep env sigma (ind, u as pind) (mib,mip as specif) kind =
         | None ->
           let is = if mip.mind_natural_sprop && not (Sorts.family_equal kind InSProp)
             then
-              user_err Pp.(str "scheme SProp -> Type not done") (* TODO is important *)
+              Some (Array.map_of_list (lift 1) is)
             else None
           in
           mkCase (ci, lift ndepar p, is, mkRel 1, Termops.rel_vect ndepar k)

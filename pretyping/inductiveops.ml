@@ -424,12 +424,17 @@ let build_dependent_constructor cs =
      (List.map (lift cs.cs_nargs) cs.cs_params)
       @(Context.Rel.to_extended_list mkRel 0 cs.cs_args))
 
-let build_dependent_inductive env ((ind, params) as indf) =
+let build_dependent_inductive_and_indices env ((ind, params) as indf) =
   let arsign,_ = get_arity env indf in
   let nrealargs = List.length arsign in
+  let indices = Context.Rel.to_extended_list mkRel 0 arsign in
   applist
     (mkIndU ind,
-     (List.map (lift nrealargs) params)@(Context.Rel.to_extended_list mkRel 0 arsign))
+     (List.map (lift nrealargs) params)@indices),
+  indices
+
+let build_dependent_inductive env indf =
+  fst @@ build_dependent_inductive_and_indices env indf
 
 (* builds the arity of an elimination predicate in sort [s] *)
 
