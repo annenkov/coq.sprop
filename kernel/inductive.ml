@@ -1040,7 +1040,7 @@ let check_one_fix renv recpos trees def =
 let judgment_of_fixpoint (_, _, types, bodies) =
   Array.map2 (fun typ body -> { uj_val = body ; uj_type = typ }) types bodies
 
-let inductive_of_mutfix env ((nvect,bodynum),(names,_,types,bodies as recdef)) =
+let inductive_of_mutfix env ((nvect,bodynum),(names,relevances,types,bodies as recdef)) =
   let nbfix = Array.length bodies in
   if Int.equal nbfix 0
     || not (Int.equal (Array.length nvect) nbfix)
@@ -1071,8 +1071,19 @@ let inductive_of_mutfix env ((nvect,bodynum),(names,_,types,bodies as recdef)) =
                 (mind, (env', b))
 	      else check_occur env' (n+1) b
             else anomaly ~label:"check_one_fix" (Pp.str "Bad occurrence of recursive call.")
-        | _ -> raise_err env i NotEnoughAbstractionInFixBody in
-    check_occur fixenv 1 def in
+        | _ -> raise_err env i NotEnoughAbstractionInFixBody
+    in
+    let ((ind,_), _) as res = check_occur fixenv 1 def in
+    let _, ind = lookup_mind_specif env ind in
+    (* recursive sprop means non record with projections -> squashed *)
+    if not (Sorts.List.mem Sorts.InProp ind.mind_kelim)
+    then
+      begin
+        if relevances.(i) == Sorts.Relevant
+        then raise_err env i FixpointOnIrrelevantInductive
+      end;
+    res
+  in
   (* Do it on every fixpoint *)
   let rv = Array.map2_i find_ind nvect bodies in
   (Array.map fst rv, Array.map snd rv)
