@@ -134,6 +134,11 @@ let set_type_in_type () =
 let engage () =
   Global.set_engagement !impredicative_set
 
+let sprop_cumulative = ref false
+let set_sprop_cumulative b = sprop_cumulative := b
+let maybe_make_sprop_cumulative () =
+  if !sprop_cumulative then Global.make_sprop_cumulative ()
+
 (******************************************************************************)
 (* Interactive toplevel name                                                  *)
 (******************************************************************************)
@@ -766,6 +771,7 @@ let parse_args arglist =
     |"-h"|"-H"|"-?"|"-help"|"--help" -> usage !batch_mode
     |"-ideslave" -> set_ideslave ()
     |"-impredicative-set" -> set_impredicative_set ()
+    |"-sprop-cumulative" -> set_sprop_cumulative true
     |"-indices-matter" -> Indtypes.enforce_indices_matter ()
     |"-m"|"--memory" -> memory_stat := true
     |"-noinit"|"-nois" -> load_init := false
@@ -831,6 +837,7 @@ let init_toplevel arglist =
       Flags.if_verbose print_header ();
       Mltop.init_known_plugins ();
       engage ();
+      maybe_make_sprop_cumulative ();
 
       (* Allow the user to load an arbitrary state here *)
       inputstate ();
