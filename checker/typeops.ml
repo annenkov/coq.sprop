@@ -39,10 +39,18 @@ let type_judgment env (c,ty as j) =
 
 (* This should be a type intended to be assumed. The error message is *)
 (* not as useful as for [type_judgment]. *)
-let assumption_of_judgment env j =
-  try fst(type_judgment env j)
+
+let infer_assumption env t ty =
+  try
+    let _, s = type_judgment env (t, ty) in
+    t, (match s with SProp -> Irrelevant | _ -> Relevant)
   with TypeError _ ->
-    error_assumption env j
+    error_assumption env (t, ty)
+
+let check_assumption env r (t, ty) =
+  let t, r' = infer_assumption env t ty in
+  assert (r == r');
+  t
 
 (************************************************)
 (* Incremental typing rules: builds a typing judgement given the *)
@@ -62,7 +70,7 @@ let judge_of_type u = Sort (Type (Univ.super u))
 
 let judge_of_relative env n =
   try
-    let LocalAssum (_,typ) | LocalDef (_,_,typ) = lookup_rel n env in
+    let LocalAssum (_,_,typ) | LocalDef (_,_,_,typ) = lookup_rel n env in
     lift n typ
   with Not_found ->
     error_unbound_rel env n
@@ -86,7 +94,7 @@ let judge_of_apply env (f,funj) argjv =
     | [] -> typ
     | (h,hj)::restjl ->
         (match whd_all env typ with
-          | Prod (_,c1,c2) ->
+          | Prod (_,_,c1,c2) ->
 	      (try conv_leq env hj c1
 	      with NotConvertible ->
 		error_cant_apply_bad_type env (n,c1, hj) (f,funj) argjv);
@@ -101,7 +109,7 @@ let judge_of_apply env (f,funj) argjv =
 let sort_of_product env domsort rangsort =
   match (domsort, rangsort) with
     (* Product rule (s,Prop,Prop) *)
-    | _,       (SProp|Prop)  -> rangsort
+    | _,       (Prop|SProp)  -> rangsort
     (* Product rule (Prop/Set,Set,Set) *)
     | (SProp | Prop | Set),  Set -> rangsort
     (* Product rule (Type,Set,?) *)
@@ -115,7 +123,7 @@ let sort_of_product env domsort rangsort =
     (* Product rule (Prop,Type_i,Type_i) *)
     | Set,  Type u2  -> Type (Univ.sup Univ.type0_univ u2)
     (* Product rule (Prop,Type_i,Type_i) *)
-    | (SProp|Prop), Type _  -> rangsort
+    | (SProp | Prop), Type _  -> rangsort
     (* Product rule (Type_i,Type_i,Type_i) *)
     | Type u1, Type u2 -> Type (Univ.sup u1 u2)
 
@@ -184,14 +192,24 @@ let check_branch_types env (c,cj) (lfj,explft) =
     | Invalid_argument _ ->
         error_number_branches env (c,cj) (Array.length explft)
 
-let judge_of_case env ci pj (c,cj) lfj =
-  let indspec =
-    try find_rectype env cj
-    with Not_found -> error_case_not_inductive env (c,cj) in
-  let _ = check_case_info env (fst (fst indspec)) ci in
-  let (bty,rslty) = type_case_branches env indspec pj c in
-  check_branch_types env (c,cj) (lfj,bty);
-  rslty
+let check_case_is env nparams sp sc pis is =
+  match is with
+  | None ->
+    if is_sprop sc && not (is_sprop sp)
+    then error_sprop_missing_annot env
+  | Some is ->
+    if not (is_sprop sc) || is_sprop sp
+    then error_sprop_unexpected_annot env
+    else if not (Int.equal (Array.length is) (CList.length pis - nparams))
+    then error_sprop_mismatch_annot env
+    else
+      CList.iteri (fun i pi ->
+          if i >= nparams
+          then
+            let index = is.(i - nparams) in
+            try conv env pi index
+            with Reduction.NotConvertible -> error_sprop_incorrect_annot env i pi index)
+        pis
 
 (* Projection. *)
 
@@ -231,7 +249,10 @@ let type_fixpoint env lna lar lbody vdefj =
 (*         let env' = add_constraints (enforce_leq u u' empty_constraint) env in *)
 (*         env', mkArity (ctxt,Type u') *)
 (*     | _ -> env, ar *)
+let relevance_of_sort = function
+  | SProp -> Irrelevant | _ -> Relevant
 
+let check_relevance s r = assert (relevance_of_sort s == r)
 
 (* The typing machine. *)
 let rec execute env cstr =
@@ -268,27 +289,30 @@ let rec execute env cstr =
         let ct = execute env c in
           judge_of_projection env p c ct
 
-    | Lambda (name,c1,c2) ->
-        let _ = execute_type env c1 in
-	let env1 = push_rel (LocalAssum (name,c1)) env in
-        let j' = execute env1 c2 in
-        Prod(name,c1,j')
+    | Lambda (name,r,c1,c2) ->
+      let s1 = execute_type env c1 in
+      check_relevance s1 r;
+      let env1 = push_rel (LocalAssum (name,r,c1)) env in
+      let j' = execute env1 c2 in
+      Prod(name,r,c1,j')
 
-    | Prod (name,c1,c2) ->
-        let varj = execute_type env c1 in
-	let env1 = push_rel (LocalAssum (name,c1)) env in
-        let varj' = execute_type env1 c2 in
-	Sort (sort_of_product env varj varj')
+    | Prod (name,r,c1,c2) ->
+      let varj = execute_type env c1 in
+      check_relevance varj r;
+      let env1 = push_rel (LocalAssum (name,r,c1)) env in
+      let varj' = execute_type env1 c2 in
+      Sort (sort_of_product env varj varj')
 
-    | LetIn (name,c1,c2,c3) ->
+    | LetIn (name,r,c1,c2,c3) ->
         let j1 = execute env c1 in
         (* /!\ c2 can be an inferred type => refresh
            (but the pushed type is still c2) *)
         let _ =
           let env',c2' = (* refresh_arity env *) env, c2 in
-          let _ = execute_type env' c2' in
+          let s2 = execute_type env' c2' in
+          check_relevance s2 r;
           judge_of_cast env' (c1,j1) DEFAULTcast c2' in
-        let env1 = push_rel (LocalDef (name,c1,c2)) env in
+        let env1 = push_rel (LocalDef (name,r,c1,c2)) env in
         let j' = execute env1 c3 in
         subst1 c1 j'
 
@@ -303,11 +327,11 @@ let rec execute env cstr =
 
     | Construct c -> judge_of_constructor env c
 
-    | Case (ci,p,c,lf) ->
+    | Case (ci,p,is,c,lf) ->
         let cj = execute env c in
         let pj = execute env p in
         let lfj = execute_array env lf in
-        judge_of_case env ci (p,pj) (c,cj) lfj
+        judge_of_case env ci (p,pj) is (c,cj) lfj
     | Fix ((_,i as vni),recdef) ->
         let fix_ty = execute_recdef env recdef i in
         let fix = (vni,recdef) in
@@ -331,16 +355,29 @@ and execute_type env constr =
   let j = execute env constr in
   snd (type_judgment env (constr,j))
 
-and execute_recdef env (names,lar,vdef) i =
+and execute_recdef env (names,rl,lar,vdef) i =
   let larj = execute_array env lar in
   let larj = Array.map2 (fun c ty -> c,ty) lar larj in
-  let lara = Array.map (assumption_of_judgment env) larj in
-  let env1 = push_rec_types (names,lara,vdef) env in
+  let lara = Array.map2 (check_assumption env) rl larj in
+  let env1 = push_rec_types (names,rl,lara,vdef) env in
   let vdefj = execute_array env1 vdef in
   type_fixpoint env1 names lara vdef vdefj;
   lara.(i)
 
 and execute_array env = Array.map (execute env)
+
+and judge_of_case env ci pj is (c,cj) lfj =
+  let _, pis as indspec =
+    try find_rectype env cj
+    with Not_found -> error_case_not_inductive env (c,cj) in
+  let _ = check_case_info env (fst (fst indspec)) ci in
+  let (bty,rslty) = type_case_branches env indspec pj c in
+  check_branch_types env (c,cj) (lfj,bty);
+  let sc = execute_type env cj in
+  let _, sp = dest_arity env (snd pj) in
+  let () = check_case_is env ci.ci_npar sp sc pis is in
+  rslty
+
 
 (* Derived functions *)
 let infer env constr = execute env constr
@@ -351,12 +388,14 @@ let infer_type env constr = execute_type env constr
 let check_ctxt env rels =
   fold_rel_context (fun d env ->
     match d with
-      | LocalAssum (_,ty) ->
-          let _ = infer_type env ty in
-          push_rel d env
-      | LocalDef (_,bd,ty) ->
+      | LocalAssum (_,r,ty) ->
+        let s = infer_type env ty in
+        check_relevance s r;
+        push_rel d env
+      | LocalDef (_,r,bd,ty) ->
           let j1 = infer env bd in
-          let _ = infer env ty in
+          let s = infer_type env ty in
+          check_relevance s r;
           conv_leq env j1 ty;
           push_rel d env)
     rels ~init:env
@@ -372,9 +411,9 @@ let check_polymorphic_arity env params par =
   let pl = par.template_param_levels in
   let rec check_p env pl params =
     match pl, params with
-        Some u::pl, LocalAssum (na,ty)::params ->
+        Some u::pl, LocalAssum (na,r,ty)::params ->
           check_kind env ty u;
-          check_p (push_rel (LocalAssum (na,ty)) env) pl params
+          check_p (push_rel (LocalAssum (na,r,ty)) env) pl params
       | None::pl,d::params -> check_p (push_rel d env) pl params
       | [], _ -> ()
       | _ -> failwith "check_poly: not the right number of params" in

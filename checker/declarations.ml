@@ -223,41 +223,42 @@ let rec map_kn f f' c =
       | Construct (((kn,i),j),u) ->
 	  let kn' = f kn in
 	  if kn'==kn then c else Construct (((kn',i),j),u)
-      | Case (ci,p,ct,l) ->
+      | Case (ci,p,is,ct,l) ->
 	  let ci_ind =
             let (kn,i) = ci.ci_ind in
 	    let kn' = f kn in
 	    if kn'==kn then ci.ci_ind else kn',i
 	  in
-	  let p' = func p in
+          let p' = func p in
+          let is' = Option.smartmap (Array.smartmap func) is in
 	  let ct' = func ct in
 	  let l' = Array.smartmap func l in
-	    if (ci.ci_ind==ci_ind && p'==p
+            if (ci.ci_ind==ci_ind && p'==p && is == is'
 		&& l'==l && ct'==ct)then c
 	    else
 	      Case ({ci with ci_ind = ci_ind},
-		     p',ct', l')
+                     p',is',ct', l')
       | Cast (ct,k,t) ->
 	  let ct' = func ct in
 	  let t'= func t in
 	    if (t'==t && ct'==ct) then c
 	    else Cast (ct', k, t')
-      | Prod (na,t,ct) ->
+      | Prod (na,r,t,ct) ->
 	  let ct' = func ct in
 	  let t'= func t in
 	    if (t'==t && ct'==ct) then c
-	    else Prod (na, t', ct')
-      | Lambda (na,t,ct) ->
+            else Prod (na, r, t', ct')
+      | Lambda (na,r,t,ct) ->
 	  let ct' = func ct in
 	  let t'= func t in
 	    if (t'==t && ct'==ct) then c
-	    else Lambda (na, t', ct')
-      | LetIn (na,b,t,ct) ->
+            else Lambda (na, r, t', ct')
+      | LetIn (na,r,b,t,ct) ->
 	  let ct' = func ct in
 	  let t'= func t in
 	  let b'= func b in
 	    if (t'==t && ct'==ct && b==b') then c
-	    else LetIn (na, b', t', ct')
+            else LetIn (na, r, b', t', ct')
       | App (ct,l) ->
 	  let ct' = func ct in
 	  let l' = Array.smartmap func l in
@@ -267,16 +268,16 @@ let rec map_kn f f' c =
 	  let l' = Array.smartmap func l in
 	    if (l'==l) then c
 	    else Evar (e,l')
-      | Fix (ln,(lna,tl,bl)) ->
+      | Fix (ln,(lna,rl,tl,bl)) ->
 	  let tl' = Array.smartmap func tl in
 	  let bl' = Array.smartmap func bl in
 	    if (bl == bl'&& tl == tl') then c
-	    else Fix (ln,(lna,tl',bl'))
-      | CoFix(ln,(lna,tl,bl)) ->
+            else Fix (ln,(lna,rl,tl',bl'))
+      | CoFix(ln,(lna,rl,tl,bl)) ->
 	  let tl' = Array.smartmap func tl in
 	  let bl' = Array.smartmap func bl in
 	    if (bl == bl'&& tl == tl') then c
-	    else CoFix (ln,(lna,tl',bl'))
+            else CoFix (ln,(lna,rl,tl',bl'))
       | _ -> c
 
 let subst_mps sub c =
@@ -539,6 +540,15 @@ let subst_template_ind_arity sub s = s
 let subst_ind_arity =
   subst_decl_arity subst_regular_ind_arity subst_template_ind_arity
 
+let rec subst_out_tree sub = function
+  | OutInvert (((mi,i),ctor),args) ->
+    OutInvert (((subst_ind sub mi, i),ctor), Array.map (Option.map (subst_out_tree sub)) args)
+  | OutVariable i -> OutVariable i
+
+let subst_lc_info sub info =
+  { ctor_arg_infos = info.ctor_arg_infos;
+    ctor_out_tree = Option.map (Array.map (subst_out_tree sub)) info.ctor_out_tree }
+
 let subst_mind_packet sub mbp =
   { mind_consnames = mbp.mind_consnames;
     mind_consnrealdecls = mbp.mind_consnrealdecls;
@@ -552,6 +562,9 @@ let subst_mind_packet sub mbp =
     mind_nrealdecls = mbp.mind_nrealdecls;
     mind_kelim = mbp.mind_kelim;
     mind_recargs = subst_wf_paths sub mbp.mind_recargs (*wf_paths*);
+    mind_lc_info = Array.map (Option.map (subst_lc_info sub)) mbp.mind_lc_info;
+    mind_relevant = mbp.mind_relevant;
+    mind_natural_sprop = mbp.mind_natural_sprop;
     mind_nb_constant = mbp.mind_nb_constant;
     mind_nb_args = mbp.mind_nb_args;
     mind_reloc_tbl = mbp.mind_reloc_tbl }

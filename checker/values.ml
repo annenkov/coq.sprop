@@ -13,7 +13,7 @@
 To ensure this file is up-to-date, 'make' now compares the md5 of cic.mli
 with a copy we maintain here:
 
-MD5 d4da21877c72174f97d4af78cee9fe7b checker/cic.mli
+MD5 6a5efa41751e2f07f7f67678c1c6a49d checker/cic.mli
 
 *)
 
@@ -120,17 +120,19 @@ let v_context_set = v_tuple "universe_context_set" [|v_hset v_level;v_cstrs|]
 
 (** kernel/term *)
 
-let v_sort = v_sum "sort" 3 (*SProp, Prop, Set*) [|[|v_univ(*Type*)|]|]
+let v_sort = v_sum "sort" 3 (*SProp,Prop, Set*) [|[|v_univ(*Type*)|]|]
 let v_sortfam = v_enum "sorts_family" 4
 
 let v_puniverses v = v_tuple "punivs" [|v;v_instance|]
 
 let v_boollist = List v_bool  
 
+let v_relevance = v_sum "relevance" 2 [||]
+
 let v_caseinfo =
   let v_cstyle = v_enum "case_style" 5 in
   let v_cprint = v_tuple "case_printing" [|v_boollist;Array v_boollist;v_cstyle|] in
-  v_tuple "case_info" [|v_ind;Int;Array Int;Array Int;v_cprint|]
+  v_tuple "case_info" [|v_ind;Int;Array Int;Array Int;v_relevance;v_cprint|]
 
 let v_cast = v_enum "cast_kind" 4
 let v_proj = v_tuple "projection" [|v_cst; v_bool|]
@@ -143,26 +145,27 @@ let rec v_constr =
     [|Fail "Evar"|]; (* Evar *)
     [|v_sort|]; (* Sort *)
     [|v_constr;v_cast;v_constr|]; (* Cast *)
-    [|v_name;v_constr;v_constr|]; (* Prod *)
-    [|v_name;v_constr;v_constr|]; (* Lambda *)
-    [|v_name;v_constr;v_constr;v_constr|]; (* LetIn *)
+    [|v_name;v_relevance;v_constr;v_constr|]; (* Prod *)
+    [|v_name;v_relevance;v_constr;v_constr|]; (* Lambda *)
+    [|v_name;v_relevance;v_constr;v_constr;v_constr|]; (* LetIn *)
     [|v_constr;Array v_constr|]; (* App *)
     [|v_puniverses v_cst|]; (* Const *)
     [|v_puniverses v_ind|]; (* Ind *)
     [|v_puniverses v_cons|]; (* Construct *)
-    [|v_caseinfo;v_constr;v_constr;Array v_constr|]; (* Case *)
+    [|v_caseinfo;v_constr;Opt (Array v_constr);v_constr;Array v_constr|]; (* Case *)
     [|v_fix|]; (* Fix *)
     [|v_cofix|]; (* CoFix *)
     [|v_proj;v_constr|] (* Proj *)
   |])
 
 and v_prec = Tuple ("prec_declaration",
-                    [|Array v_name; Array v_constr; Array v_constr|])
+                    [|Array v_name; Array v_relevance;Array v_constr; Array v_constr|])
 and v_fix = Tuple ("pfixpoint", [|Tuple ("fix2",[|Array Int;Int|]);v_prec|])
 and v_cofix = Tuple ("pcofixpoint",[|Int;v_prec|])
 
-let v_rdecl = v_sum "rel_declaration" 0 [| [|v_name; v_constr|];               (* LocalAssum *)
-                                           [|v_name; v_constr; v_constr|] |]   (* LocalDef *)
+let v_rdecl = v_sum "rel_declaration" 0
+    [| [|v_name; v_relevance; v_constr|];               (* LocalAssum *)
+       [|v_name; v_relevance; v_constr; v_constr|] |]   (* LocalDef *)
 let v_rctxt = List v_rdecl
 
 let v_section_ctxt = v_enum "emptylist" 1
@@ -225,7 +228,8 @@ let v_projbody =
   v_tuple "projection_body"
 	  [|v_cst;Int;Int;v_constr;
 	    v_tuple "proj_eta" [|v_constr;v_constr|];
-	    v_constr|]
+            v_constr;
+            v_relevance|]
 
 let v_typing_flags =
   v_tuple "typing_flags" [|v_bool; v_bool; v_oracle|]
@@ -236,6 +240,7 @@ let v_cb = v_tuple "constant_body"
   [|v_section_ctxt;
     v_cst_def;
     v_constr;
+    v_relevance;
     Any;
     v_const_univs;
     Opt v_projbody;
@@ -257,6 +262,15 @@ let v_mono_ind_arity =
 let v_ind_arity = v_sum "inductive_arity" 0
   [|[|v_mono_ind_arity|];[|v_pol_arity|]|]
 
+let v_arg_info = v_sum "ctor_arg_info" 2 [||]
+
+let rec v_out_tree =
+  Sum ("ctor_out_tree", 0,
+       [| [| v_cons; Array (Opt v_out_tree) |];
+          [| Int |] |])
+
+let v_ctor_info = v_tuple "ctor_info" [| Array v_arg_info; Opt (Array v_out_tree) |]
+
 let v_one_ind = v_tuple "one_inductive_body"
   [|v_id;
     v_rctxt;
@@ -270,6 +284,9 @@ let v_one_ind = v_tuple "one_inductive_body"
     Array Int;
     Array Int;
     v_wfp;
+    v_relevance;
+    Array (Opt v_ctor_info);
+    v_bool;
     Int;
     Int;
     Any|]

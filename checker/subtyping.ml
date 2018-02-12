@@ -221,8 +221,8 @@ let check_inductive  env mp1 l info1 mib2 spec2 subst1 subst2=
   check record_equal (fun mib -> mib.mind_record);
   if mib1.mind_record != None then begin
     let rec names_prod_letin t = match t with
-      | Prod(n,_,t) -> n::(names_prod_letin t)
-      | LetIn(n,_,_,t) -> n::(names_prod_letin t)
+      | Prod(n,_,_,t) -> n::(names_prod_letin t)
+      | LetIn(n,_,_,_,t) -> n::(names_prod_letin t)
       | Cast(t,_,_) -> names_prod_letin t
       | _ -> []
     in

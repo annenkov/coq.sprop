@@ -87,8 +87,8 @@ let instantiate_params full t u args sign =
     fold_rel_context
       (fun decl (largs,subs,ty) ->
         match (decl, largs, ty) with
-          | (LocalAssum _, a::args, Prod(_,_,t)) -> (args, a::subs, t)
-          | (LocalDef (_,b,_),_,LetIn(_,_,_,t))    ->
+          | (LocalAssum _, a::args, Prod(_,_,_,t)) -> (args, a::subs, t)
+          | (LocalDef (_,_,b,_),_,LetIn(_,_,_,_,t))    ->
 	    (largs, (substl subs (subst_instance_constr u b))::subs, t)
 	  | (_,[],_)                -> if full then fail() else ([], subs, ty)
 	  | _                       -> fail ())
@@ -134,10 +134,10 @@ Remark: Set (predicative) is encoded as Type(0)
 *)
 
 let sort_as_univ = function
-  | SProp -> Univ.Universe.sprop
   | Type u -> u
-  | Prop -> Univ.type0m_univ
-  | Set -> Univ.type0_univ
+  | SProp -> Univ.Universe.sprop
+| Prop -> Univ.type0m_univ
+| Set -> Univ.type0_univ
 
 (* cons_subst add the mapping [u |-> su] in subst if [u] is not *)
 (* in the domain or add [u |-> sup x su] if [u] is already mapped *)
@@ -172,7 +172,7 @@ let make_subst env =
         (* a useless extra constraint *)
         let s = sort_as_univ (snd (dest_arity env a)) in
         make (cons_subst u s subst) (sign, exp, args)
-    | LocalAssum (na,t) :: sign, Some u::exp, [] ->
+    | LocalAssum (na,_,t) :: sign, Some u::exp, [] ->
         (* No more argument here: we add the remaining universes to the *)
         (* substitution (when [u] is distinct from all other universes in the *)
         (* template, it is identity substitution  otherwise (ie. when u is *)
@@ -310,12 +310,12 @@ let is_correct_arity env c (p,pj) ind specif params =
   let rec srec env pt ar =
     let pt' = whd_all env pt in
     match pt', ar with
-      | Prod (na1,a1,t), LocalAssum (_,a1')::ar' ->
+      | Prod (na1,r1,a1,t), LocalAssum (_,_,a1')::ar' ->
           (try conv env a1 a1'
           with NotConvertible -> raise (LocalArity None));
-          srec (push_rel (LocalAssum (na1,a1)) env) t ar'
-      | Prod (na1,a1,a2), [] -> (* whnf of t was not needed here! *)
-	 let env' = push_rel (LocalAssum (na1,a1)) env in
+          srec (push_rel (LocalAssum (na1,r1,a1)) env) t ar'
+      | Prod (na1,r1,a1,a2), [] -> (* whnf of t was not needed here! *)
+         let env' = push_rel (LocalAssum (na1,r1,a1)) env in
      let ksort = match (whd_all env' a2) with
         | Sort s -> family_of_sort s
 	    | _ -> raise (LocalArity None) in
@@ -481,16 +481,16 @@ let make_renv env recarg tree =
     rel_min = recarg+2; (* recarg = 0 ==> Rel 1 -> recarg; Rel 2 -> fix *)
     genv = [Lazy.from_val(Subterm(Large,tree))] }
 
-let push_var renv (x,ty,spec) =
-  { env = push_rel (LocalAssum (x,ty)) renv.env;
+let push_var renv (x,r,ty,spec) =
+  { env = push_rel (LocalAssum (x,r,ty)) renv.env;
     rel_min = renv.rel_min+1;
     genv = spec:: renv.genv }
 
 let assign_var_spec renv (i,spec) =
   { renv with genv = List.assign renv.genv (i-1) spec }
 
-let push_var_renv renv (x,ty) =
-  push_var renv (x,ty,Lazy.from_val Not_subterm)
+let push_var_renv renv (x,r,ty) =
+  push_var renv (x,r,ty,Lazy.from_val Not_subterm)
 
 (* Fetch recursive information about a variable p *)
 let subterm_var p renv =
@@ -503,7 +503,7 @@ let push_ctxt_renv renv ctxt =
     rel_min = renv.rel_min+n;
     genv = iterate (fun ge -> Lazy.from_val Not_subterm::ge) n renv.genv }
 
-let push_fix_renv renv (_,v,_ as recdef) =
+let push_fix_renv renv (_,r,v,_ as recdef) =
   let n = Array.length v in
   { env = push_rec_types recdef renv.env;
     rel_min = renv.rel_min+n;
@@ -579,14 +579,14 @@ let check_inductive_codomain env p =
 
 (* The following functions are almost duplicated from indtypes.ml, except
 that they carry here a poorer environment (containing less information). *)
-let ienv_push_var (env, lra) (x,a,ra) =
-(push_rel (LocalAssum (x,a)) env, (Norec,ra)::lra)
+let ienv_push_var (env, lra) (x,r,a,ra) =
+(push_rel (LocalAssum (x,r,a)) env, (Norec,ra)::lra)
 
 let ienv_push_inductive (env, ra_env) ((mind,u),lpar) =
   let mib = Environ.lookup_mind mind env in
   let ntypes = mib.mind_ntypes in
   let push_ind specif env =
-     let decl = LocalAssum (Anonymous,
+     let decl = LocalAssum (Anonymous, specif.mind_relevant,
 		            hnf_prod_applist env (type_of_inductive env ((mib,specif),u)) lpar) in
      push_rel decl env
   in
@@ -600,15 +600,15 @@ let rec ienv_decompose_prod (env,_ as ienv) n c =
  if Int.equal n 0 then (ienv,c) else
    let c' = whd_all env c in
    match c' with
-   Prod(na,a,b) ->
-     let ienv' = ienv_push_var ienv (na,a,mk_norec) in
+   Prod(na,r,a,b) ->
+     let ienv' = ienv_push_var ienv (na,r,a,mk_norec) in
      ienv_decompose_prod ienv' (n-1) b
      | _ -> assert false
 
 let lambda_implicit_lift n a =
   let level = Level.make (DirPath.make [Id.of_string "implicit"]) 0 in
   let implicit_sort = Sort (Type (Universe.make level)) in
-  let lambda_implicit a = Lambda (Anonymous, implicit_sort, a) in
+  let lambda_implicit a = Lambda (Anonymous, Relevant, implicit_sort, a) in
   iterate lambda_implicit n (lift n a)
 
 let abstract_mind_lc ntyps npars lc =
@@ -630,9 +630,9 @@ let get_recargs_approx env tree ind args =
   let rec build_recargs (env, ra_env as ienv) tree c =
     let x,largs = decompose_app (whd_all env c) in
     match x with
-    | Prod (na,b,d) ->
+    | Prod (na,r,b,d) ->
        assert (List.is_empty largs);
-       build_recargs (ienv_push_var ienv (na, b, mk_norec)) tree d
+       build_recargs (ienv_push_var ienv (na, r, b, mk_norec)) tree d
     | Rel k ->
        (* Free variables are allowed and assigned Norec *)
        (try snd (List.nth ra_env (k-1))
@@ -690,10 +690,10 @@ let get_recargs_approx env tree ind args =
       let x,largs = decompose_app (whd_all env c) in
 	match x with
 
-          | Prod (na,b,d) ->
+          | Prod (na,r,b,d) ->
 	     let () = assert (List.is_empty largs) in
              let recarg = build_recargs ienv (List.hd trees) b in
-             let ienv' = ienv_push_var ienv (na,b,mk_norec) in
+             let ienv' = ienv_push_var ienv (na,r,b,mk_norec) in
              recargs_constr_rec ienv' (List.tl trees) (recarg::lrec) d
           | hd ->
              List.rev lrec
@@ -742,7 +742,7 @@ let rec subterm_specif renv stack t =
     match f with
       | Rel k -> subterm_var k renv
 
-    | Case (ci,p,c,lbr) ->
+    | Case (ci,p,is,c,lbr) ->
        let stack' = push_stack_closures renv l stack in
        let cases_spec =
 	 branches_specif renv (lazy_subterm_specif renv [] c) ci
@@ -755,7 +755,7 @@ let rec subterm_specif renv stack t =
        let spec = subterm_spec_glb stl in
        restrict_spec renv.env spec p
 
-    | Fix ((recindxs,i),(_,typarray,bodies as recdef)) ->
+    | Fix ((recindxs,i),(_,_,typarray,bodies as recdef)) ->
       (* when proving that the fixpoint f(x)=e is less than n, it is enough
 	 to prove that e is less than n assuming f is less than n
 	 furthermore when f is applied to a term which is strictly less than
@@ -795,10 +795,10 @@ let rec subterm_specif renv stack t =
 			 assign_var_spec renv'' (1, arg_spec) in
 		     subterm_specif renv'' [] strippedBody)
 
-      | Lambda (x,a,b) ->
+      | Lambda (x,r,a,b) ->
           assert (l=[]);
 	  let spec,stack' = extract_stack renv a stack in
-	    subterm_specif (push_var renv (x,a,spec)) stack' b
+            subterm_specif (push_var renv (x,r,a,spec)) stack' b
 
       (* Metas and evars are considered OK *)
       | (Meta _|Evar _) -> Dead_code
@@ -854,8 +854,8 @@ let filter_stack_domain env ci p stack =
   let rec filter_stack env ar stack =
     let t = whd_all env ar in
     match stack, t with
-    | elt :: stack', Prod (n,a,c0) ->
-      let d = LocalAssum (n,a) in
+    | elt :: stack', Prod (n,r,a,c0) ->
+      let d = LocalAssum (n,r,a) in
       let ty, args = decompose_app (whd_all env a) in
       let elt = match ty with
       | Ind ind -> 
@@ -912,13 +912,13 @@ let check_one_fix renv recpos trees def =
                 match lookup_rel p renv.env with
                 | LocalAssum _ ->
                     List.iter (check_rec_call renv []) l
-                | LocalDef (_,c,_) ->
+                | LocalDef (_,_,c,_) ->
                     try List.iter (check_rec_call renv []) l
                     with FixGuardError _ ->
                       check_rec_call renv stack (applist(lift p c,l))
               end
 		
-        | Case (ci,p,c_0,lrest) ->
+        | Case (ci,p,is,c_0,lrest) ->
             List.iter (check_rec_call renv []) (c_0::p::l);
             (* compute the recarg information for the arguments of
                each branch *)
@@ -942,7 +942,7 @@ let check_one_fix renv recpos trees def =
                 S+{yp} in e
            then f is guarded with respect to S in (g a1 ... am).
            Eduardo 7/9/98 *)
-        | Fix ((recindxs,i),(_,typarray,bodies as recdef)) ->
+        | Fix ((recindxs,i),(_,_,typarray,bodies as recdef)) ->
             List.iter (check_rec_call renv []) l;
             Array.iter (check_rec_call renv []) typarray;
             let decrArg = recindxs.(i) in
@@ -965,18 +965,18 @@ let check_one_fix renv recpos trees def =
 	        check_rec_call renv stack value
 	    else List.iter (check_rec_call renv []) l
 
-        | Lambda (x,a,b) ->
+        | Lambda (x,r,a,b) ->
 	    assert (l = []);
 	    check_rec_call renv [] a ;
 	    let spec, stack' = extract_stack renv a stack in
-	    check_rec_call (push_var renv (x,a,spec)) stack' b
+            check_rec_call (push_var renv (x,r,a,spec)) stack' b
 
-        | Prod (x,a,b) ->
+        | Prod (x,r,a,b) ->
 	    assert (l = [] && stack = []);
             check_rec_call renv [] a;
-            check_rec_call (push_var_renv renv (x,a)) [] b
+            check_rec_call (push_var_renv renv (x,r,a)) [] b
 
-        | CoFix (i,(_,typarray,bodies as recdef)) ->
+        | CoFix (i,(_,_,typarray,bodies as recdef)) ->
             List.iter (check_rec_call renv []) l;
 	    Array.iter (check_rec_call renv []) typarray;
 	    let renv' = push_fix_renv renv recdef in
@@ -1003,9 +1003,9 @@ let check_one_fix renv recpos trees def =
       check_rec_call (assign_var_spec renv (1,recArgsDecrArg)) [] body
     else
       match body with
-	| Lambda (x,a,b) ->
+        | Lambda (x,r,a,b) ->
 	    check_rec_call renv [] a;
-            let renv' = push_var_renv renv (x,a) in
+            let renv' = push_var_renv renv (x,r,a) in
 	      check_nested_fix_body renv' (decr-1) recArgsDecrArg b
 	| _ -> anomaly (Pp.str "Not enough abstractions in fix body.")
 	    
@@ -1013,7 +1013,7 @@ let check_one_fix renv recpos trees def =
   check_rec_call renv [] def
 
 
-let inductive_of_mutfix env ((nvect,bodynum),(names,types,bodies as recdef)) =
+let inductive_of_mutfix env ((nvect,bodynum),(names,_,types,bodies as recdef)) =
   let nbfix = Array.length bodies in
   if nbfix = 0
     || Array.length nvect <> nbfix
@@ -1031,9 +1031,9 @@ let inductive_of_mutfix env ((nvect,bodynum),(names,types,bodies as recdef)) =
        gives the type of the k+1-eme abstraction (must be an inductive)  *)
     let rec check_occur env n def =
       match (whd_all env def) with
-        | Lambda (x,a,b) ->
+        | Lambda (x,r,a,b) ->
 	    if noccur_with_meta n nbfix a then
-	      let env' = push_rel (LocalAssum (x,a)) env in
+              let env' = push_rel (LocalAssum (x,r,a)) env in
               if n = k+1 then
                 (* get the inductive type of the fixpoint *)
                 let (mind, _) =
@@ -1050,7 +1050,7 @@ let inductive_of_mutfix env ((nvect,bodynum),(names,types,bodies as recdef)) =
   (Array.map fst rv, Array.map snd rv)
 
 
-let check_fix env ((nvect,_),(names,_,bodies as _recdef) as fix) =
+let check_fix env ((nvect,_),(names,_,_,bodies as _recdef) as fix) =
   let (minds, rdef) = inductive_of_mutfix env fix in
   let get_tree (kn,i) =
     let mib = Environ.lookup_mind kn env in
@@ -1081,8 +1081,8 @@ let anomaly_ill_typed () =
 let rec codomain_is_coind env c =
   let b = whd_all env c in
   match b with
-    | Prod (x,a,b) ->
-	codomain_is_coind (push_rel (LocalAssum (x,a)) env) b
+    | Prod (x,r,a,b) ->
+        codomain_is_coind (push_rel (LocalAssum (x,r,a)) env) b
     | _ ->
 	(try find_coinductive env b
         with Not_found ->
@@ -1120,15 +1120,15 @@ let check_one_cofix env nbfix def deftype =
               | _ -> anomaly_ill_typed ()
             in process_args_of_constr (realargs, lra)
 
-	| Lambda (x,a,b) ->
+        | Lambda (x,r,a,b) ->
 	     assert (args = []);
             if noccur_with_meta n nbfix a then
-              let env' = push_rel (LocalAssum (x,a)) env in
+              let env' = push_rel (LocalAssum (x,r,a)) env in
               check_rec_call env' alreadygrd (n+1) tree vlra b
             else
 	      raise (CoFixGuardError (env,RecCallInTypeOfAbstraction a))
 
-	| CoFix (j,(_,varit,vdefs as recdef)) ->
+        | CoFix (j,(_,_,varit,vdefs as recdef)) ->
             if List.for_all (noccur_with_meta n nbfix) args
             then
 	      if Array.for_all (noccur_with_meta n nbfix) varit then
@@ -1141,7 +1141,7 @@ let check_one_cofix env nbfix def deftype =
 	    else
 	      raise (CoFixGuardError (env,UnguardedRecursiveCall c))
 
-	| Case (_,p,tm,vrest) ->
+        | Case (_,p,is,tm,vrest) ->
 	   begin
 	     let tree = match restrict_spec env (Subterm (Strict, tree)) p with
 	     | Dead_code -> assert false
@@ -1174,7 +1174,7 @@ let check_one_cofix env nbfix def deftype =
 (* The  function which checks that the whole block of definitions
    satisfies the guarded condition *)
 
-let check_cofix env (bodynum,(names,types,bodies as recdef)) =
+let check_cofix env (bodynum,(names,_,types,bodies as recdef)) =
   let nbfix = Array.length bodies in
   for i = 0 to nbfix-1 do
     let fixenv = push_rec_types recdef env in

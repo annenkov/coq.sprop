@@ -89,9 +89,10 @@ type fterm =
   | FFix of fixpoint * fconstr subs
   | FCoFix of cofixpoint * fconstr subs
   | FCaseT of case_info * constr * fconstr * constr array * fconstr subs (* predicate and branches are closures *)
-  | FLambda of int * (Name.t * constr) list * constr * fconstr subs
-  | FProd of Name.t * fconstr * fconstr
-  | FLetIn of Name.t * fconstr * fconstr * constr * fconstr subs
+  | FCaseInvert of case_info * constr * fconstr array * fconstr * constr array * fconstr subs
+  | FLambda of int * (Name.t * relevance * constr) list * constr * fconstr subs
+  | FProd of Name.t * relevance * fconstr * fconstr
+  | FLetIn of Name.t * relevance * fconstr * fconstr * constr * fconstr subs
   | FEvar of existential_key * fconstr array
   | FLIFT of int * fconstr
   | FCLOS of constr * fconstr subs
@@ -132,7 +133,7 @@ val inject : constr -> fconstr
 val fterm_of : fconstr -> fterm
 val term_of_fconstr : fconstr -> constr
 val destFLambda :
-  (fconstr subs -> constr -> fconstr) -> fconstr -> Name.t * fconstr * fconstr
+  (fconstr subs -> constr -> fconstr) -> fconstr -> Name.t * relevance * fconstr * fconstr
 
 (* Global and local constant cache *)
 type clos_infos

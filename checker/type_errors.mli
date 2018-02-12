@@ -63,6 +63,10 @@ type type_error =
   | IllTypedRecBody of
       int * Name.t array * unsafe_judgment array * constr array
   | UnsatisfiedConstraints of Univ.constraints
+  | SPropMissingAnnot
+  | SPropUnexpectedAnnot
+  | SPropMismatchAnnot
+  | SPropIncorrectAnnot of int * constr * constr
 
 exception TypeError of env * type_error
 
@@ -102,3 +106,8 @@ val error_ill_typed_rec_body  :
   env -> int -> Name.t array -> unsafe_judgment array -> constr array -> 'a
 
 val error_unsatisfied_constraints : env -> Univ.constraints -> 'a
+
+val error_sprop_missing_annot : env -> 'a
+val error_sprop_unexpected_annot : env -> 'a
+val error_sprop_mismatch_annot : env -> 'a
+val error_sprop_incorrect_annot : env -> int -> constr -> constr -> 'a

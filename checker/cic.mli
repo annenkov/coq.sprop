@@ -41,6 +41,8 @@ type sorts =
 
 type sorts_family = InSProp | InProp | InSet | InType
 
+type relevance = Relevant | Irrelevant
+
 (** {6 Useful types } *)
 
 (** {6 Existential variables } *)
@@ -63,6 +65,7 @@ type case_info =
     ci_npar       : int;
     ci_cstr_ndecls : int array; (* number of pattern vars of each constructor (with let's)*)
     ci_cstr_nargs : int array; (* number of pattern vars of each constructor (w/o let's) *)
+    ci_relevance : relevance;
     ci_pp_info    : case_printing (** not interpreted by the kernel *)
   }
 
@@ -75,7 +78,7 @@ type cast_kind = VMcast | NATIVEcast | DEFAULTcast (* | REVERTcast *)
     the same order (i.e. last argument first) *)
 type 'constr pexistential = existential_key * 'constr array
 type 'constr prec_declaration =
-    Name.t array * 'constr array * 'constr array
+    Name.t array * relevance array * 'constr array * 'constr array
 type 'constr pfixpoint =
     (int array * int) * 'constr prec_declaration
 type 'constr pcofixpoint =
@@ -92,14 +95,14 @@ type constr =
   | Evar      of constr pexistential (** Shouldn't occur in a .vo *)
   | Sort      of sorts
   | Cast      of constr * cast_kind * constr
-  | Prod      of Name.t * constr * constr
-  | Lambda    of Name.t * constr * constr
-  | LetIn     of Name.t * constr * constr * constr
+  | Prod      of Name.t * relevance * constr * constr
+  | Lambda    of Name.t * relevance * constr * constr
+  | LetIn     of Name.t * relevance * constr * constr * constr
   | App       of constr * constr array
   | Const     of pconstant
   | Ind       of pinductive
   | Construct of pconstructor
-  | Case      of case_info * constr * constr * constr array
+  | Case      of case_info * constr * constr array option * constr * constr array
   | Fix       of constr pfixpoint
   | CoFix     of constr pcofixpoint
   | Proj      of projection * constr
@@ -111,8 +114,8 @@ type cofixpoint = constr pcofixpoint
 
 (** {6 Type of assumptions and contexts}  *)
 
-type rel_declaration = LocalAssum of Name.t * constr          (* name, type *)
-                     | LocalDef of Name.t * constr * constr   (* name, value, type *)
+type rel_declaration = LocalAssum of Name.t * relevance * constr          (* name, type *)
+                     | LocalDef of Name.t * relevance * constr * constr   (* name, value, type *)
 type rel_context = rel_declaration list
 
 (** The declarations below in .vo should be outside sections,
@@ -211,6 +214,7 @@ type projection_body = {
   proj_type : constr; (* Type under params *)
   proj_eta : constr * constr; (* Eta-expanded term and type *)
   proj_body : constr; (* For compatibility, the match version *)
+  proj_relevance : relevance;
 }
 
 type constant_def =
@@ -237,6 +241,7 @@ type constant_body = {
     const_hyps : section_context; (** New: younger hyp at top *)
     const_body : constant_def;
     const_type : constr;
+    const_relevance : relevance;
     const_body_code : to_patch_substituted;
     const_universes : constant_universes;
     const_proj : projection_body option;
@@ -268,6 +273,16 @@ type recursivity_kind =
   | BiFinite (** = non-recursive, like in "Record" definitions *)
 
 type inductive_arity = (regular_inductive_arity, template_arity) declaration_arity
+type ctor_arg_info = ForcedArg | MatchArg
+
+type ctor_out_tree =
+  | OutInvert of Names.constructor * ctor_out_tree option array
+  | OutVariable of int
+
+type ctor_info = {
+  ctor_arg_infos : ctor_arg_info array; (* no parameters *)
+  ctor_out_tree : ctor_out_tree array option; (** 1 for each index (no parameters), None if not natural SProp type (ie squashed or non-SProp). *)
+}
 
 type one_inductive_body = {
 (** {8 Primitive datas } *)
@@ -304,6 +319,12 @@ type one_inductive_body = {
     (not used in the kernel) *)
 
     mind_recargs : wf_paths; (** Signature of recursive arguments in the constructors *)
+
+    mind_relevant : relevance;
+
+    mind_lc_info : ctor_info option array; (** None if non invertible *)
+
+    mind_natural_sprop : bool;
 
 (** {8 Datas for bytecode compilation } *)
 

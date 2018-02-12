@@ -108,7 +108,7 @@ let whd_allnolet env t =
 let beta_appvect c v =
   let rec stacklam env t stack =
     match t, stack with
-        Lambda(_,_,c), arg::stacktl -> stacklam (arg::env) c stacktl
+        Lambda(_,_,_,c), arg::stacktl -> stacklam (arg::env) c stacktl
       | _ -> applist (substl env t, stack) in
   stacklam [] c (Array.to_list v)
 
@@ -206,6 +206,7 @@ let convert_constructors
 let sort_cmp env univ pb s0 s1 =
   match (s0,s1) with
   | SProp, SProp | Prop, Prop | Set, Set -> ()
+  | SProp, _ | _, SProp -> raise NotConvertible
   | Prop, (Set | Type _) | Set, Type _ ->
     if not (pb = CUMUL) then raise NotConvertible
   | Type u1, Type u2 ->
@@ -224,7 +225,7 @@ let sort_cmp env univ pb s0 s1 =
       end;
       raise NotConvertible
     end
-  | SProp, _ | _, SProp | Set, Prop | Type _, (Prop | Set) -> raise NotConvertible
+  | Set, Prop | Type _, (Prop | Set) -> raise NotConvertible
 
 let rec no_arg_available = function
   | [] -> true
@@ -262,8 +263,8 @@ let in_whnf (t,stk) =
     | FLambda _ -> no_arg_available stk
     | FConstruct _ -> no_case_available stk
     | FCoFix _ -> no_case_available stk
-    | FFix(((ri,n),(_,_,_)),_) -> no_nth_arg_available ri.(n) stk
-    | (FFlex _ | FProd _ | FEvar _ | FInd _ | FAtom _ | FRel _ | FProj _) -> true
+    | FFix(((ri,n),(_,_,_,_)),_) -> no_nth_arg_available ri.(n) stk
+    | (FFlex _ | FProd _ | FEvar _ | FInd _ | FAtom _ | FRel _ | FProj _ | FCaseInvert _) -> true
     | FLOCKED -> assert false
 
 let default_level = Level 0
@@ -371,12 +372,12 @@ and eqappr univ cv_pb infos (lft1,st1) (lft2,st2) =
         (* Inconsistency: we tolerate that v1, v2 contain shift and update but
            we throw them away *)
         assert (is_empty_stack v1 && is_empty_stack v2);
-        let (_,ty1,bd1) = destFLambda mk_clos hd1 in
-        let (_,ty2,bd2) = destFLambda mk_clos hd2 in
+        let (_,r1,ty1,bd1) = destFLambda mk_clos hd1 in
+        let (_,_,ty2,bd2) = destFLambda mk_clos hd2 in
         ccnv univ CONV infos el1 el2 ty1 ty2;
         ccnv univ CONV infos (el_lift el1) (el_lift el2) bd1 bd2
 
-    | (FProd (_,c1,c2), FProd (_,c'1,c'2)) ->
+    | (FProd (_,r1,c1,c2), FProd (_,_,c'1,c'2)) ->
         assert (is_empty_stack v1 && is_empty_stack v2);
 	(* Luo's system *)
         ccnv univ CONV infos el1 el2 c1 c'1;
@@ -386,13 +387,13 @@ and eqappr univ cv_pb infos (lft1,st1) (lft2,st2) =
     | (FLambda _, _) ->
         if v1 <> [] then
           anomaly (Pp.str "conversion was given unreduced term (FLambda).");
-        let (_,_ty1,bd1) = destFLambda mk_clos hd1 in
+        let (_,r1,ty1,bd1) = destFLambda mk_clos hd1 in
         eqappr univ CONV infos
           (el_lift lft1,(bd1,[])) (el_lift lft2,(hd2,eta_expand_stack v2))
     | (_, FLambda _) ->
         if v2 <> [] then
           anomaly (Pp.str "conversion was given unreduced term (FLambda).");
-        let (_,_ty2,bd2) = destFLambda mk_clos hd2 in
+        let (_,r2,ty2,bd2) = destFLambda mk_clos hd2 in
         eqappr univ CONV infos
           (el_lift lft1,(hd1,eta_expand_stack v1)) (el_lift lft2,(bd2,[]))
 
@@ -474,7 +475,7 @@ and eqappr univ cv_pb infos (lft1,st1) (lft2,st2) =
     	  in convert_stacks univ infos lft1 lft2 v1 v2
 	with Not_found -> raise NotConvertible)
 
-     | (FFix ((op1,(_,tys1,cl1)),e1), FFix((op2,(_,tys2,cl2)),e2)) ->
+     | (FFix ((op1,(_,_,tys1,cl1)),e1), FFix((op2,(_,_,tys2,cl2)),e2)) ->
 	 if op1 = op2
 	 then
 	   let n = Array.length cl1 in
@@ -488,7 +489,7 @@ and eqappr univ cv_pb infos (lft1,st1) (lft2,st2) =
            convert_stacks univ infos lft1 lft2 v1 v2
          else raise NotConvertible
 
-     | (FCoFix ((op1,(_,tys1,cl1)),e1), FCoFix((op2,(_,tys2,cl2)),e2)) ->
+     | (FCoFix ((op1,(_,_,tys1,cl1)),e1), FCoFix((op2,(_,_,tys2,cl2)),e2)) ->
          if op1 = op2
          then
 	   let n = Array.length cl1 in
@@ -549,7 +550,7 @@ let vm_conv cv_pb = fconv cv_pb true
 
 let hnf_prod_app env t n =
   match whd_all env t with
-    | Prod (_,_,b) -> subst1 n b
+    | Prod (_,_,_,b) -> subst1 n b
     | _ -> anomaly ~label:"hnf_prod_app" (Pp.str "Need a product.")
 
 let hnf_prod_applist env t nl =
@@ -561,8 +562,8 @@ let dest_prod env =
   let rec decrec env m c =
     let t = whd_all env c in
     match t with
-      | Prod (n,a,c0) ->
-          let d = LocalAssum (n,a) in
+      | Prod (n,r,a,c0) ->
+          let d = LocalAssum (n,r,a) in
 	  decrec (push_rel d env) (d::m) c0
       | _ -> m,t
   in
@@ -573,11 +574,11 @@ let dest_prod_assum env =
   let rec prodec_rec env l ty =
     let rty = whd_allnolet env ty in
     match rty with
-    | Prod (x,t,c)  ->
-        let d = LocalAssum (x,t) in
+    | Prod (x,r,t,c)  ->
+        let d = LocalAssum (x,r,t) in
 	prodec_rec (push_rel d env) (d::l) c
-    | LetIn (x,b,t,c) ->
-        let d = LocalDef (x,b,t) in
+    | LetIn (x,r,b,t,c) ->
+        let d = LocalDef (x,r,b,t) in
 	prodec_rec (push_rel d env) (d::l) c
     | Cast (c,_,_)    -> prodec_rec env l c
     | _               ->
@@ -591,11 +592,11 @@ let dest_lam_assum env =
   let rec lamec_rec env l ty =
     let rty = whd_allnolet env ty in
     match rty with
-    | Lambda (x,t,c)  ->
-        let d = LocalAssum (x,t) in
+    | Lambda (x,r,t,c)  ->
+        let d = LocalAssum (x,r,t) in
 	lamec_rec (push_rel d env) (d::l) c
-    | LetIn (x,b,t,c) ->
-        let d = LocalDef (x,b,t) in
+    | LetIn (x,r,b,t,c) ->
+        let d = LocalDef (x,r,b,t) in
 	lamec_rec (push_rel d env) (d::l) c
     | Cast (c,_,_)    -> lamec_rec env l c
     | _               -> l,rty

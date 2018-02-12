@@ -56,10 +56,10 @@ let is_constructor_head t =
 let conv_ctxt_prefix env (ctx1:rel_context) ctx2 =
   let rec chk env rctx1 rctx2 =
     match rctx1, rctx2 with
-        (LocalAssum (_,ty1) as d1)::rctx1', LocalAssum (_,ty2)::rctx2' ->
+        (LocalAssum (_,_,ty1) as d1)::rctx1', LocalAssum (_,_,ty2)::rctx2' ->
           conv env ty1 ty2;
           chk (push_rel d1 env) rctx1' rctx2'
-      | (LocalDef (_,bd1,ty1) as d1)::rctx1', LocalDef (_,bd2,ty2)::rctx2' ->
+      | (LocalDef (_,_,bd1,ty1) as d1)::rctx1', LocalDef (_,_,bd2,ty2)::rctx2' ->
           conv env ty1 ty2;
           conv env bd1 bd2;
           chk (push_rel d1 env) rctx1' rctx2'
@@ -92,12 +92,12 @@ exception InductiveError of inductive_error
 let rec sorts_of_constr_args env t =
   let t = whd_allnolet env t in
   match t with
-    | Prod (name,c1,c2) ->
+    | Prod (name,r,c1,c2) ->
         let varj = infer_type env c1 in
-	let env1 = push_rel (LocalAssum (name,c1)) env in
+        let env1 = push_rel (LocalAssum (name,r,c1)) env in
 	varj :: sorts_of_constr_args env1 c2
-    | LetIn (name,def,ty,c) ->
-        let env1 = push_rel (LocalDef (name,def,ty)) env in
+    | LetIn (name,r,def,ty,c) ->
+        let env1 = push_rel (LocalDef (name,r,def,ty)) env in
 	sorts_of_constr_args env1 c
     | _ when is_constructor_head t -> []
     | _ -> anomaly ~label:"infos_and_sort" (Pp.str "not a positive constructor.")
@@ -166,8 +166,9 @@ let typecheck_arity env params inds =
 	   later, after the validation of the inductive definition,
 	   full_arity is used as argument or subject to cast, an
 	   upper universe will be generated *)
-	let id = ind.mind_typename in
-	let env_ar' = push_rel (LocalAssum (Name id, arity)) env_ar in
+        let id = ind.mind_typename in
+        let r = Typeops.relevance_of_sort (snd (dest_arity env arity)) in
+        let env_ar' = push_rel (LocalAssum (Name id, r, arity)) env_ar in
         env_ar')
       env
       inds in
@@ -187,7 +188,7 @@ let check_predicativity env s small level =
     | Set, ImpredicativeSet -> ()
     | Set, _ ->
         if not small then failwith "impredicative Set inductive type"
-    | SProp, _ | Prop, _ -> ()
+    | (SProp|Prop),_ -> ()
 
 
 let sort_of_ind = function
@@ -218,8 +219,9 @@ let allowed_sorts issmall isunit s =
   | InProp -> logical_sorts
 
   | InSProp when isunit -> all_sorts
-
   | InSProp -> [InSProp]
+
+
 
 let compute_elim_sorts env_ar params mib arity lc =
   let inst = extended_rel_list 0 params in
@@ -350,7 +352,7 @@ let check_rec_par (env,n,_,_) hyps nrecp largs =
   in find (n-1) (lpar,List.rev hyps)
 
 let lambda_implicit_lift n a =
-  let lambda_implicit a = Lambda(Anonymous,Evar(0,[||]),a) in
+  let lambda_implicit a = Lambda(Anonymous,Relevant,Evar(0,[||]),a) in
   iterate lambda_implicit n (lift n a)
 
 (* This removes global parameters of the inductive types in lc (for
@@ -371,14 +373,14 @@ let abstract_mind_lc env ntyps npars lc =
      (i.e. range of inductives is [n; n+ntypes-1])
    [lra] is the list of recursive tree of each variable
  *)
-let ienv_push_var (env, n, ntypes, lra) (x,a,ra) =
- (push_rel (LocalAssum (x,a)) env, n+1, ntypes, (Norec,ra)::lra)
+let ienv_push_var (env, n, ntypes, lra) (x,r,a,ra) =
+ (push_rel (LocalAssum (x,r,a)) env, n+1, ntypes, (Norec,ra)::lra)
 
 let ienv_push_inductive (env, n, ntypes, ra_env) ((mi,u),lpar) =
   let auxntyp = 1 in
   let specif = lookup_mind_specif env mi in
   let env' =
-    let decl = LocalAssum (Anonymous,
+    let decl = LocalAssum (Anonymous,(snd specif).mind_relevant,
                            hnf_prod_applist env (type_of_inductive env (specif,u)) lpar) in
     push_rel decl env in
   let ra_env' =
@@ -392,8 +394,8 @@ let rec ienv_decompose_prod (env,_,_,_ as ienv) n c =
   if n=0 then (ienv,c) else
     let c' = whd_all env c in
     match c' with
-	Prod(na,a,b) ->
-	  let ienv' = ienv_push_var ienv (na,a,mk_norec) in
+        Prod(na,r,a,b) ->
+          let ienv' = ienv_push_var ienv (na,r,a,mk_norec) in
 	  ienv_decompose_prod ienv' (n-1) b
       | _ -> assert false
 
@@ -405,12 +407,12 @@ let check_positivity_one (env, _,ntypes,_ as ienv) hyps nrecp (_,i as ind) indlc
   let rec check_pos (env, n, ntypes, ra_env as ienv) c =
     let x,largs = decompose_app (whd_all env c) in
       match x with
-	| Prod (na,b,d) ->
+        | Prod (na,r,b,d) ->
 	    assert (List.is_empty largs);
             (match weaker_noccur_between env n ntypes b with
 		None -> failwith_non_pos_list n ntypes [b]
               | Some b ->
-	          check_pos (ienv_push_var ienv (na, b, mk_norec)) d)
+                  check_pos (ienv_push_var ienv (na, r, b, mk_norec)) d)
 	| Rel k ->
             (try
               let (ra,rarg) = List.nth ra_env (k-1) in
@@ -474,10 +476,10 @@ let check_positivity_one (env, _,ntypes,_ as ienv) hyps nrecp (_,i as ind) indlc
     let rec check_constr_rec (env,n,ntypes,ra_env as ienv) lrec c =
       let x,largs = decompose_app (whd_all env c) in
 	match x with
-          | Prod (na,b,d) ->
+          | Prod (na,r,b,d) ->
 	      assert (List.is_empty largs);
               let recarg = check_pos ienv b in
-              let ienv' = ienv_push_var ienv (na,b,mk_norec) in
+              let ienv' = ienv_push_var ienv (na,r,b,mk_norec) in
 		check_constr_rec ienv' (recarg::lrec) d
 
 	  | hd ->
@@ -544,7 +546,7 @@ let check_subtyping_arity_constructor env (subst : Univ.Instance.t) (arcn : cons
   in
   let check_typ typ typ_env =
     match typ with
-    | LocalAssum (_, typ') ->
+    | LocalAssum (_, _, typ') ->
       begin
        try
           basic_check typ_env typ'; Environ.push_rel typ typ_env

@@ -49,7 +49,6 @@ sig
 
   val sprop : t
 
-  val is_sprop : t -> bool
 end
 
 type universe = Universe.t

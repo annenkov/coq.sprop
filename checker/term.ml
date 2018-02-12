@@ -30,6 +30,8 @@ let sort_of_univ u =
   else if Univ.is_type0_univ u then Set
   else Type u
 
+let is_sprop = function SProp -> true | _ -> false
+
 (********************************************************************)
 (*       Constructions as implemented                               *)
 (********************************************************************)
@@ -69,16 +71,16 @@ let iter_constr_with_binders g f n c = match c with
   | (Rel _ | Meta _ | Var _   | Sort _ | Const _ | Ind _
     | Construct _) -> ()
   | Cast (c,_,t) -> f n c; f n t
-  | Prod (_,t,c) -> f n t; f (g n) c
-  | Lambda (_,t,c) -> f n t; f (g n) c
-  | LetIn (_,b,t,c) -> f n b; f n t; f (g n) c
+  | Prod (_,_,t,c) -> f n t; f (g n) c
+  | Lambda (_,_,t,c) -> f n t; f (g n) c
+  | LetIn (_,_,b,t,c) -> f n b; f n t; f (g n) c
   | App (c,l) -> f n c; Array.iter (f n) l
   | Evar (_,l) -> Array.iter (f n) l
-  | Case (_,p,c,bl) -> f n p; f n c; Array.iter (f n) bl
-  | Fix (_,(_,tl,bl)) ->
+  | Case (_,p,is,c,bl) -> f n p; Option.iter (Array.iter (f n)) is; f n c; Array.iter (f n) bl
+  | Fix (_,(_,_,tl,bl)) ->
       Array.iter (f n) tl;
       Array.iter (f (iterate g (Array.length tl) n)) bl
-  | CoFix (_,(_,tl,bl)) ->
+  | CoFix (_,(_,_,tl,bl)) ->
       Array.iter (f n) tl;
       Array.iter (f (iterate g (Array.length tl) n)) bl
   | Proj (p, c) -> f n c
@@ -146,18 +148,18 @@ let map_constr_with_binders g f l c = match c with
   | (Rel _ | Meta _ | Var _   | Sort _ | Const _ | Ind _
     | Construct _) -> c
   | Cast (c,k,t) -> Cast (f l c, k, f l t)
-  | Prod (na,t,c) -> Prod (na, f l t, f (g l) c)
-  | Lambda (na,t,c) -> Lambda (na, f l t, f (g l) c)
-  | LetIn (na,b,t,c) -> LetIn (na, f l b, f l t, f (g l) c)
+  | Prod (na,r,t,c) -> Prod (na, r, f l t, f (g l) c)
+  | Lambda (na,r,t,c) -> Lambda (na, r, f l t, f (g l) c)
+  | LetIn (na,r,b,t,c) -> LetIn (na, r, f l b, f l t, f (g l) c)
   | App (c,al) -> App (f l c, Array.map (f l) al)
   | Evar (e,al) -> Evar (e, Array.map (f l) al)
-  | Case (ci,p,c,bl) -> Case (ci, f l p, f l c, Array.map (f l) bl)
-  | Fix (ln,(lna,tl,bl)) ->
+  | Case (ci,p,is,c,bl) -> Case (ci, f l p, Option.map (Array.map (f l)) is, f l c, Array.map (f l) bl)
+  | Fix (ln,(lna,rl,tl,bl)) ->
       let l' = iterate g (Array.length tl) l in
-      Fix (ln,(lna,Array.map (f l) tl,Array.map (f l') bl))
-  | CoFix(ln,(lna,tl,bl)) ->
+      Fix (ln,(lna,rl,Array.map (f l) tl,Array.map (f l') bl))
+  | CoFix(ln,(lna,rl,tl,bl)) ->
       let l' = iterate g (Array.length tl) l in
-      CoFix (ln,(lna,Array.map (f l) tl,Array.map (f l') bl))
+      CoFix (ln,(lna,rl,Array.map (f l) tl,Array.map (f l') bl))
   | Proj (p, c) -> Proj (p, f l c)
 
 (* The generic lifting function *)
@@ -231,15 +233,15 @@ let fold_rel_context f l ~init = List.fold_right f l init
 let fold_rel_context_outside f l ~init = List.fold_right f l init
 
 let map_rel_decl f = function
-  | LocalAssum (n, typ) as decl ->
+  | LocalAssum (n, r, typ) as decl ->
      let typ' = f typ in
      if typ' == typ then decl else
-       LocalAssum (n, typ')
-  | LocalDef (n, body, typ) as decl ->
+       LocalAssum (n, r, typ')
+  | LocalDef (n, r, body, typ) as decl ->
      let body' = f body in
      let typ' = f typ in
      if body' == body && typ' == typ then decl else
-       LocalDef (n, body', typ')
+       LocalDef (n, r, body', typ')
 
 let map_rel_context f =
   List.smartmap (map_rel_decl f)
@@ -258,7 +260,7 @@ let extended_rel_list n hyps =
 let compose_lam l b =
   let rec lamrec = function
     | ([], b)       -> b
-    | ((v,t)::l, b) -> lamrec (l, Lambda (v,t,b))
+    | ((v,r,t)::l, b) -> lamrec (l, Lambda (v,r,t,b))
   in
   lamrec (l,b)
 
@@ -266,7 +268,7 @@ let compose_lam l b =
    ([(xn,Tn);...;(x1,T1)],T), where T is not a lambda *)
 let decompose_lam =
   let rec lamdec_rec l c = match c with
-    | Lambda (x,t,c) -> lamdec_rec ((x,t)::l) c
+    | Lambda (x,r,t,c) -> lamdec_rec ((x,r,t)::l) c
     | Cast (c,_,_)     -> lamdec_rec l c
     | _                -> l,c
   in
@@ -280,8 +282,8 @@ let decompose_lam_n_assum n =
   let rec lamdec_rec l n c =
     if Int.equal n 0 then l,c
     else match c with
-    | Lambda (x,t,c)  -> lamdec_rec (LocalAssum (x,t) :: l) (n-1) c
-    | LetIn (x,b,t,c) -> lamdec_rec (LocalDef (x,b,t) :: l) n c
+    | Lambda (x,r,t,c)  -> lamdec_rec (LocalAssum (x,r,t) :: l) (n-1) c
+    | LetIn (x,r,b,t,c) -> lamdec_rec (LocalDef (x,r,b,t) :: l) n c
     | Cast (c,_,_)      -> lamdec_rec l n c
     | c -> user_err Pp.(str "decompose_lam_n_assum: not enough abstractions")
   in
@@ -292,16 +294,16 @@ let decompose_lam_n_assum n =
 (* Constructs either [(x:t)c] or [[x=b:t]c] *)
 let mkProd_or_LetIn decl c =
   match decl with
-    | LocalAssum (na,t) -> Prod (na, t, c)
-    | LocalDef (na,b,t) -> LetIn (na, b, t, c)
+    | LocalAssum (na,r,t) -> Prod (na, r, t, c)
+    | LocalDef (na,r,b,t) -> LetIn (na, r, b, t, c)
 
 let it_mkProd_or_LetIn   = List.fold_left (fun c d -> mkProd_or_LetIn d c)
 
 let decompose_prod_assum =
   let rec prodec_rec l c =
     match c with
-    | Prod (x,t,c)    -> prodec_rec (LocalAssum (x,t) :: l) c
-    | LetIn (x,b,t,c) -> prodec_rec (LocalDef (x,b,t) :: l) c
+    | Prod (x,r,t,c)    -> prodec_rec (LocalAssum (x,r,t) :: l) c
+    | LetIn (x,r,b,t,c) -> prodec_rec (LocalDef (x,r,b,t) :: l) c
     | Cast (c,_,_)    -> prodec_rec l c
     | _               -> l,c
   in
@@ -313,8 +315,8 @@ let decompose_prod_n_assum n =
   let rec prodec_rec l n c =
     if Int.equal n 0 then l,c
     else match c with
-    | Prod (x,t,c)    -> prodec_rec (LocalAssum (x,t) :: l) (n-1) c
-    | LetIn (x,b,t,c) -> prodec_rec (LocalDef (x,b,t) :: l) (n-1) c
+    | Prod (x,r,t,c)    -> prodec_rec (LocalAssum (x,r,t) :: l) (n-1) c
+    | LetIn (x,r,b,t,c) -> prodec_rec (LocalDef (x,r,b,t) :: l) (n-1) c
     | Cast (c,_,_)    -> prodec_rec l n c
     | c -> user_err Pp.(str "decompose_prod_n_assum: not enough assumptions")
   in
@@ -332,8 +334,8 @@ let mkArity (sign,s) = it_mkProd_or_LetIn (Sort s) sign
 let destArity =
   let rec prodec_rec l c =
     match c with
-    | Prod (x,t,c)    -> prodec_rec (LocalAssum (x,t)::l) c
-    | LetIn (x,b,t,c) -> prodec_rec (LocalDef (x,b,t)::l) c
+    | Prod (x,r,t,c)    -> prodec_rec (LocalAssum (x,r,t)::l) c
+    | LetIn (x,r,b,t,c) -> prodec_rec (LocalDef (x,r,b,t)::l) c
     | Cast (c,_,_)    -> prodec_rec l c
     | Sort s          -> l,s
     | _               -> anomaly ~label:"destArity" (Pp.str "not an arity.")
@@ -342,8 +344,8 @@ let destArity =
 
 let rec isArity c =
   match c with
-  | Prod (_,_,c)    -> isArity c
-  | LetIn (_,b,_,c) -> isArity (subst1 b c)
+  | Prod (_,_,_,c)    -> isArity c
+  | LetIn (_,_,b,_,c) -> isArity (subst1 b c)
   | Cast (c,_,_)    -> isArity c
   | Sort _          -> true
   | _               -> false
@@ -357,10 +359,15 @@ let rec isArity c =
 let compare_sorts s1 s2 = match s1, s2 with
 | SProp, SProp | Prop, Prop | Set, Set -> true
 | Type u1, Type u2 -> Univ.Universe.equal u1 u2
-| (SProp | Prop | Set | Type _), _ -> false
+| SProp, (Prop | Set | Type _) | (Prop | Set | Type _), SProp -> false
+| Prop, Set | Set, Prop -> false
+| (Prop | Set), Type _ -> false
+| Type _, (Prop | Set) -> false
 
 let eq_puniverses f (c1,u1) (c2,u2) =
   Univ.Instance.equal u1 u2 && f c1 c2
+
+let compare_relevance (a:relevance) b = a == b
 
 let compare_constr f t1 t2 =
   match t1, t2 with
@@ -370,9 +377,9 @@ let compare_constr f t1 t2 =
   | Sort s1, Sort s2 -> compare_sorts s1 s2
   | Cast (c1,_,_), _ -> f c1 t2
   | _, Cast (c2,_,_) -> f t1 c2
-  | Prod (_,t1,c1), Prod (_,t2,c2) -> f t1 t2 && f c1 c2
-  | Lambda (_,t1,c1), Lambda (_,t2,c2) -> f t1 t2 && f c1 c2
-  | LetIn (_,b1,t1,c1), LetIn (_,b2,t2,c2) -> f b1 b2 && f t1 t2 && f c1 c2
+  | Prod (_,_,t1,c1), Prod (_,_,t2,c2) -> f t1 t2 && f c1 c2
+  | Lambda (_,_,t1,c1), Lambda (_,_,t2,c2) -> f t1 t2 && f c1 c2
+  | LetIn (_,_,b1,t1,c1), LetIn (_,_,b2,t2,c2) -> f b1 b2 && f t1 t2 && f c1 c2
   | App (c1,l1), App (c2,l2) ->
       if Int.equal (Array.length l1) (Array.length l2) then
         f c1 c2 && Array.for_all2 f l1 l2
@@ -387,12 +394,12 @@ let compare_constr f t1 t2 =
   | Ind c1, Ind c2 -> eq_puniverses eq_ind_chk c1 c2
   | Construct ((c1,i1),u1), Construct ((c2,i2),u2) -> Int.equal i1 i2 && eq_ind_chk c1 c2
     && Univ.Instance.equal u1 u2
-  | Case (_,p1,c1,bl1), Case (_,p2,c2,bl2) ->
-      f p1 p2 && f c1 c2 && Array.equal f bl1 bl2
-  | Fix ((ln1, i1),(_,tl1,bl1)), Fix ((ln2, i2),(_,tl2,bl2)) ->
+  | Case (_,p1,is1,c1,bl1), Case (_,p2,is2,c2,bl2) ->
+      f p1 p2 && Option.equal (Array.equal f) is1 is2 && f c1 c2 && Array.equal f bl1 bl2
+  | Fix ((ln1, i1),(_,_,tl1,bl1)), Fix ((ln2, i2),(_,_,tl2,bl2)) ->
       Int.equal i1 i2 && Array.equal Int.equal ln1 ln2 &&
       Array.equal f tl1 tl2 && Array.equal f bl1 bl2
-  | CoFix(ln1,(_,tl1,bl1)), CoFix(ln2,(_,tl2,bl2)) ->
+  | CoFix(ln1,(_,_,tl1,bl1)), CoFix(ln2,(_,_,tl2,bl2)) ->
       Int.equal ln1 ln2 && Array.equal f tl1 tl2 && Array.equal f bl1 bl2
   | Proj (p1,c1), Proj(p2,c2) -> Projection.equal p1 p2 && f c1 c2
   | _ -> false

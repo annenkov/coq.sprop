@@ -23,20 +23,20 @@ let print_pure_constr csr =
   | Cast (c,_, t) -> open_hovbox 1;
       print_string "("; (term_display c); print_cut();
       print_string "::"; (term_display t); print_string ")"; close_box()
-  | Prod (Name(id),t,c) ->
+  | Prod (Name(id),_,t,c) ->
       open_hovbox 1;
       print_string"("; print_string (Id.to_string id);
       print_string ":"; box_display t;
       print_string ")"; print_cut();
       box_display c; close_box()
-  | Prod (Anonymous,t,c) ->
+  | Prod (Anonymous,_,t,c) ->
       print_string"("; box_display t; print_cut(); print_string "->";
       box_display c; print_string ")";
-  | Lambda (na,t,c) ->
+  | Lambda (na,_,t,c) ->
       print_string "["; name_display na;
       print_string ":"; box_display t; print_string "]";
       print_cut(); box_display c;
-  | LetIn (na,b,t,c) ->
+  | LetIn (na,_,b,t,c) ->
       print_string "["; name_display na; print_string "=";
       box_display b; print_cut();
       print_string ":"; box_display t; print_string "]";
@@ -63,7 +63,7 @@ let print_pure_constr csr =
       print_string ",";
       print_int i; print_string ","; print_int j; 
       print_string ","; print_instance u; print_string ")"
-  | Case (ci,p,c,bl) ->
+  | Case (ci,p,_,c,bl) ->
       open_vbox 0;
       print_string "<"; box_display p; print_string ">";
       print_cut(); print_string "Case";
@@ -74,7 +74,7 @@ let print_pure_constr csr =
       print_cut();
       print_string "end";
       close_box()
-  | Fix ((t,i),(lna,tl,bl)) ->
+  | Fix ((t,i),(lna,_,tl,bl)) ->
       print_string "Fix("; print_int i; print_string ")";
       print_cut();
       open_vbox 0;
@@ -88,7 +88,7 @@ let print_pure_constr csr =
 	  print_cut()
         done
       in print_string"{"; print_fix(); print_string"}"
-  | CoFix(i,(lna,tl,bl)) ->
+  | CoFix(i,(lna,_,tl,bl)) ->
       print_string "CoFix("; print_int i; print_string ")";
       print_cut();
       open_vbox 0;
