@@ -84,9 +84,11 @@ let rec flag_of_type env t : flag =
   let t = whd_all env t in
   match Constr.kind t with
     | Prod (x,t,c) -> flag_of_type (push_rel (LocalAssum (x,t)) env) c
-    | Sort s when Sorts.is_prop s -> (Logic,TypeScheme)
+    | Sort s when Sorts.is_prop s || Sorts.is_sprop s -> (Logic,TypeScheme)
     | Sort _ -> (Info,TypeScheme)
-    | _ -> if (sort_of env t) == InProp then (Logic,Default) else (Info,Default)
+    | _ ->
+      let s = sort_of env t in
+      if s == InProp || s == InSProp then (Logic,Default) else (Info,Default)
 
 (*s Two particular cases of [flag_of_type]. *)
 
