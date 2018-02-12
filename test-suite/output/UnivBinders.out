@@ -42,10 +42,10 @@ bar@{u} = nat
          *)
 
 bar is universe polymorphic
-foo@{u Top.17 v} = 
-Type@{Top.17} -> Type@{v} -> Type@{u}
-     : Type@{max(u+1,Top.17+1,v+1)}
-(* u Top.17 v |=  *)
+foo@{u Top.18 v} = 
+Type@{Top.18} -> Type@{v} -> Type@{u}
+     : Type@{max(u+1,Top.18+1,v+1)}
+(* u Top.18 v |=  *)
 
 foo is universe polymorphic
 Monomorphic mono = Type@{mono.u}
@@ -80,10 +80,10 @@ Type@{M} -> Type@{N} -> Type@{E}
 (* E M N |=  *)
 
 foo is universe polymorphic
-foo@{Top.16 Top.17 Top.18} = 
-Type@{Top.17} -> Type@{Top.18} -> Type@{Top.16}
-     : Type@{max(Top.16+1,Top.17+1,Top.18+1)}
-(* Top.16 Top.17 Top.18 |=  *)
+foo@{Top.17 Top.18 Top.19} = 
+Type@{Top.18} -> Type@{Top.19} -> Type@{Top.17}
+     : Type@{max(Top.17+1,Top.18+1,Top.19+1)}
+(* Top.17 Top.18 Top.19 |=  *)
 
 foo is universe polymorphic
 NonCumulative Inductive Empty@{E} : Type@{E} :=  
@@ -149,24 +149,24 @@ inmod@{u} -> Type@{v}
 (* u v |=  *)
 
 Applied.infunct is universe polymorphic
-axfoo@{i Top.41 Top.42} : Type@{Top.41} -> Type@{i}
-(* i Top.41 Top.42 |=  *)
+axfoo@{i Top.42 Top.43} : Type@{Top.42} -> Type@{i}
+(* i Top.42 Top.43 |=  *)
 
 axfoo is universe polymorphic
 Argument scope is [type_scope]
 Expands to: Constant Top.axfoo
-axbar@{i Top.41 Top.42} : Type@{Top.42} -> Type@{i}
-(* i Top.41 Top.42 |=  *)
+axbar@{i Top.42 Top.43} : Type@{Top.43} -> Type@{i}
+(* i Top.42 Top.43 |=  *)
 
 axbar is universe polymorphic
 Argument scope is [type_scope]
 Expands to: Constant Top.axbar
-axfoo' : Type@{Top.44} -> Type@{axbar'.i}
+axfoo' : Type@{Top.45} -> Type@{axbar'.i}
 
 axfoo' is not universe polymorphic
 Argument scope is [type_scope]
 Expands to: Constant Top.axfoo'
-axbar' : Type@{Top.44} -> Type@{axbar'.i}
+axbar' : Type@{Top.45} -> Type@{axbar'.i}
 
 axbar' is not universe polymorphic
 Argument scope is [type_scope]
