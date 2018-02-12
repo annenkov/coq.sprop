@@ -133,7 +133,7 @@ let betaiotazeta = mkflags [fBETA;fIOTA;fZETA]
  * instantiations (cbv or lazy) are.
  *)
 
-type 'a tableKey =
+type 'a tableKey = 'a Names.tableKey =
   | ConstKey of 'a
   | VarKey of Id.t
   | RelKey of int

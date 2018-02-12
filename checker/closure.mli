@@ -56,7 +56,7 @@ val betaiotazeta       : reds
 val betadeltaiotanolet : reds
 
 (***********************************************************************)
-type 'a tableKey =
+type 'a tableKey = 'a Names.tableKey =
   | ConstKey of 'a
   | VarKey of Id.t
   | RelKey of int
