@@ -355,11 +355,11 @@ let get_projections env (ind,params) =
 
 let make_case_or_project env sigma indty ci ~with_is pred c branches =
   let open EConstr in
-  let IndType (indf, is) = indty in
+  let IndType (indf, _) = indty in
   let projs = get_projections env indf in
   match projs with
   | None ->
-    let is = if with_is then Some (Array.of_list is) else None in
+    let is = if with_is then Some (mkAppliedInd indty) else None in
     (mkCase (ci, pred, is, c, branches))
   | Some ps ->
      assert(Array.length branches == 1);
@@ -424,17 +424,13 @@ let build_dependent_constructor cs =
      (List.map (lift cs.cs_nargs) cs.cs_params)
       @(Context.Rel.to_extended_list mkRel 0 cs.cs_args))
 
-let build_dependent_inductive_and_indices env ((ind, params) as indf) =
+let build_dependent_inductive env ((ind, params) as indf) =
   let arsign,_ = get_arity env indf in
   let nrealargs = List.length arsign in
   let indices = Context.Rel.to_extended_list mkRel 0 arsign in
   applist
     (mkIndU ind,
-     (List.map (lift nrealargs) params)@indices),
-  indices
-
-let build_dependent_inductive env indf =
-  fst @@ build_dependent_inductive_and_indices env indf
+     (List.map (lift nrealargs) params)@indices)
 
 (* builds the arity of an elimination predicate in sort [s] *)
 

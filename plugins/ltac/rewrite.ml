@@ -1183,7 +1183,7 @@ let subterm all flags (s : 'a pure_strategy) : 'a pure_strategy =
 	let state, res = 
 	  match c' with
 	  | Success r ->
-            let case = mkCase (ci, lift 1 p, Option.map (Array.map (lift 1)) is,
+            let case = mkCase (ci, lift 1 p, Option.map (lift 1) is,
                                mkRel 1, Array.map (lift 1) brs) in
 	    let res = make_leibniz_proof env case ty r in
 	      state, Success (coerce env unfresh (prop,cstr) res)
@@ -1206,7 +1206,7 @@ let subterm all flags (s : 'a pure_strategy) : 'a pure_strategy =
 	      in
 		match found with
 		| Some r ->
-                    let ctxc = mkCase (ci, lift 1 p, Option.map (Array.map (lift 1)) is,
+                    let ctxc = mkCase (ci, lift 1 p, Option.map (lift 1) is,
                                        lift 1 c, Array.of_list (List.rev (brs' c'))) in
 		    state, Success (make_leibniz_proof env ctxc ty r)
 		| None -> state, c'

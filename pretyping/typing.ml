@@ -174,7 +174,7 @@ let check_allowed_sort env sigma indty c p =
       match ksort with
       | Sorts.InSProp -> None,r
       | InProp | InSet | InType ->
-        Some (Array.of_list realargs), r
+        Some (mkAppliedInd indty), r
     else None,r
 
 

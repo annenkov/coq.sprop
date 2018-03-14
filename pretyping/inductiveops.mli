@@ -160,7 +160,6 @@ val get_arity        : env -> inductive_family -> Context.Rel.t * Sorts.family
 
 val build_dependent_constructor : constructor_summary -> constr
 val build_dependent_inductive   : env -> inductive_family -> constr
-val build_dependent_inductive_and_indices : env -> inductive_family -> constr * constr list
 val make_arity_signature : env -> evar_map -> bool -> inductive_family -> EConstr.rel_context
 val make_arity : env -> evar_map -> bool -> inductive_family -> Sorts.t -> EConstr.types
 val build_branch_type : env -> evar_map -> bool -> constr -> constructor_summary -> types

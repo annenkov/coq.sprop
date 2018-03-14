@@ -293,25 +293,6 @@ let check_branch_types env (ind,u) c ct lft explft =
     | Invalid_argument _ ->
         error_number_branches env (make_judge c ct) (Array.length explft)
 
-let check_case_is env nparams sp sc pis is =
-  match is with
-  | None ->
-    if Sorts.is_sprop sc && not (Sorts.is_sprop sp)
-    then error_sprop_missing_annot env
-  | Some is ->
-    if not (Sorts.is_sprop sc) || Sorts.is_sprop sp
-    then error_sprop_unexpected_annot env
-    else if not (Int.equal (Array.length is) (CList.length pis - nparams))
-    then error_sprop_mismatch_annot env
-    else
-      CList.iteri (fun i pi ->
-          if i >= nparams
-          then
-            let index = is.(i - nparams) in
-            try Reduction.default_conv Reduction.CONV env pi index
-            with Reduction.NotConvertible -> error_sprop_incorrect_annot env i pi index)
-        pis
-
 let type_of_projection env p c ct =
   let pb = lookup_projection p env in
   let (ind,u), args =
@@ -456,15 +437,24 @@ and type_of_case env ci p pt is c ct lf lft =
   let (pind, pis as indspec) =
     try find_rectype env ct
     with Not_found -> error_case_not_inductive env (make_judge c ct) in
-  let sc = execute_is_type env ct in
   let _, sp = dest_arity env pt in
-  let () = check_case_info env pind (Sorts.relevance_of_sort sp) ci in
-  let () = check_case_is env ci.ci_npar sp sc pis is in
+  let rp = Sorts.relevance_of_sort sp in
+  let () = check_case_info env pind rp ci in
+  let () = check_case_is env ct (Inductive.relevance_of_inductive env (fst pind)) rp is in
   let (bty,rslty) =
     type_case_branches env indspec (make_judge p pt) c in
   let () = check_branch_types env pind c ct lft bty in
   rslty
 
+and check_case_is env ct rt rp is =
+  match (rt, rp), is with
+  | (Relevant, Relevant | Relevant, Irrelevant | Irrelevant, Irrelevant), None -> ()
+  | (Relevant, Relevant | Relevant, Irrelevant | Irrelevant, Irrelevant), Some _ ->
+    error_sprop_unexpected_annot env
+  | (Irrelevant, Relevant), None -> error_sprop_missing_annot env
+  | (Irrelevant, Relevant), Some is ->
+    let _ = execute_is_type env is in
+    default_conv CONV env ct is
 
 (* Derived functions *)
 let infer env constr =

@@ -70,8 +70,8 @@ let unif evd t1 t2=
             Queue.add (ca,cb) bige;
             begin match isa, isb with
               | None, None -> ()
-              | Some isa, Some isb when Int.equal (Array.length isa) (Array.length isb) ->
-                Array.iter2 (fun ia ib -> Queue.add (ia,ib) bige) isa isb
+              | Some isa, Some isb ->
+                Queue.add (isa,isb) bige
               | _ -> raise (UFAIL (nt1, nt2))
             end;
             let l=Array.length va in

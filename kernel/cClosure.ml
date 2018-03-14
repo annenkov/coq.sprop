@@ -364,7 +364,7 @@ and fterm =
   | FFix of fixpoint * fconstr subs
   | FCoFix of cofixpoint * fconstr subs
   | FCaseT of case_info * constr * fconstr * constr array * fconstr subs (* predicate and branches are closures *)
-  | FCaseInvert of case_info * constr * fconstr array * fconstr * constr array * fconstr subs
+  | FCaseInvert of case_info * constr * finvert * fconstr * constr array * fconstr subs
   | FLambda of int * (Name.t * Sorts.relevance * constr) list * constr * fconstr subs
   | FProd of Name.t * Sorts.relevance * fconstr * fconstr
   | FLetIn of Name.t * Sorts.relevance * fconstr * fconstr * constr * fconstr subs
@@ -372,6 +372,8 @@ and fterm =
   | FLIFT of int * fconstr
   | FCLOS of constr * fconstr subs
   | FLOCKED
+
+and finvert = Univ.Instance.t * fconstr array * fconstr array
 
 let fterm_of v = v.term
 let set_norm v = v.norm <- Norm
@@ -567,8 +569,15 @@ let mk_clos_deep clos_fun env t =
         { norm = Red;
           term = FCaseT (ci, p, clos_fun env c, v, env) }
     | Case (ci,p,Some is,c,v) ->
+      let ind, args = decompose_appvect is in
+      let args = Array.map (clos_fun env) args in
+      let params, is = Array.chop ci.ci_npar args in
+      let inv = match kind ind with
+        | Ind (_,u) -> u, params, is
+        | _ -> assert false
+      in
       { norm = Red;
-        term = FCaseInvert (ci, p, Array.map (clos_fun env) is, clos_fun env c, v, env) }
+        term = FCaseInvert (ci, p, inv, clos_fun env c, v, env) }
     | Fix fx ->
         { norm = Cstr; term = FFix (fx, env) }
     | CoFix cfx ->
@@ -603,8 +612,11 @@ let rec to_constr constr_fun lfts v =
         mkCase (ci, constr_fun lfts (mk_clos env p), None,
                 constr_fun lfts c,
                 Array.map (fun b -> constr_fun lfts (mk_clos env b)) ve)
-    | FCaseInvert (ci, p, is, c, ve, env) ->
-      mkCase (ci, constr_fun lfts (mk_clos env p), Some (Array.map (constr_fun lfts) is),
+    | FCaseInvert (ci, p, (u,params,is), c, ve, env) ->
+      let is = mkApp (mkIndU (ci.ci_ind, u),
+                      Array.map (constr_fun lfts) (Array.append params is))
+      in
+      mkCase (ci, constr_fun lfts (mk_clos env p), Some is,
               constr_fun lfts c,
               Array.map (fun b -> constr_fun lfts (mk_clos env b)) ve)
     | FFix ((op,(lna,r,tys,bds)),e) ->
@@ -1041,7 +1053,7 @@ and try_match_ctor_infos info ci is =
 
    Return match branch term (which is under a substitution) and
    matched values. *)
-and case_inversion info ci is c v =
+and case_inversion info ci (u,p,is) c v =
   let open Declarations in
   let env = info_env info in
   let ind = ci.ci_ind in

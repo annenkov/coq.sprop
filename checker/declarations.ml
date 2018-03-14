@@ -230,7 +230,7 @@ let rec map_kn f f' c =
 	    if kn'==kn then ci.ci_ind else kn',i
 	  in
           let p' = func p in
-          let is' = Option.smartmap (Array.smartmap func) is in
+          let is' = Option.smartmap func is in
 	  let ct' = func ct in
 	  let l' = Array.smartmap func l in
             if (ci.ci_ind==ci_ind && p'==p && is == is'

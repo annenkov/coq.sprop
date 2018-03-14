@@ -69,7 +69,7 @@ type cbv_value =
 and cbv_stack =
   | TOP
   | APP of cbv_value array * cbv_stack
-  | CASE of constr * constr array option * constr array * case_info * cbv_value subs * cbv_stack
+  | CASE of constr * constr option * constr array * case_info * cbv_value subs * cbv_stack
   | PROJ of projection * Declarations.projection_body * cbv_stack
 
 (* les vars pourraient etre des constr,
@@ -403,7 +403,7 @@ let rec apply_stack info t = function
       apply_stack info (mkApp(t,Array.map (cbv_norm_value info) args)) st
   | CASE (ty,is,br,ci,env,st) ->
       apply_stack info
-        (mkCase (ci, cbv_norm_term info env ty, Option.map (Array.map (cbv_norm_term info env)) is,
+        (mkCase (ci, cbv_norm_term info env ty, Option.map (cbv_norm_term info env) is,
                  t, Array.map (cbv_norm_term info env) br))
         st
   | PROJ (p, pinfo, st) ->

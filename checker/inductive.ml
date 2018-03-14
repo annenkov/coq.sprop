@@ -204,6 +204,10 @@ let instantiate_universes env ctx ar argsorts =
 
 (* Type of an inductive type *)
 
+let relevance_of_inductive env ind =
+  let _, mip = lookup_mind_specif env ind in
+  mip.mind_relevant
+
 let type_of_inductive_gen env ((mib,mip),u) paramtyps =
   match mip.mind_arity with
   | RegularArity a ->

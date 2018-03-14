@@ -371,7 +371,7 @@ let iter_constr_LR f c = match kind c with
   | Prod (_, _, t, b) | Lambda (_, _, t, b)  -> f t; f b
   | LetIn (_, _, v, t, b) -> f v; f t; f b
   | App (cf, a) -> f cf; Array.iter f a
-  | Case (_, p, is, v, b) -> f v; f p; Option.iter (Array.iter f) is; Array.iter f b
+  | Case (_, p, is, v, b) -> f v; f p; Option.iter f is; Array.iter f b
   | Fix (_, (_, _, t, b)) | CoFix (_, (_, _, t, b)) ->
     for i = 0 to Array.length t - 1 do f t.(i); f b.(i) done
   | Proj(_,a) -> f a

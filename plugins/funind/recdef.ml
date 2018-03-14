@@ -333,7 +333,7 @@ let check_not_nested sigma forbidden e =
       | Ind _ -> ()
       | Construct _ -> ()
       | Case(_,t,is,e,a) ->
-        check_not_nested t;Option.iter (Array.iter check_not_nested) is;
+        check_not_nested t;Option.iter check_not_nested is;
         check_not_nested e;Array.iter check_not_nested a
       | Fix _ -> user_err Pp.(str "check_not_nested : Fix")
       | CoFix _ -> user_err Pp.(str "check_not_nested : Fix")
@@ -380,7 +380,7 @@ type journey_info =
     { letiN : ((Name.t*constr*types*constr),constr) journey_info_tac;
       lambdA : ((Name.t*types*constr),constr) journey_info_tac;
       casE : ((constr infos -> tactic) -> constr infos -> tactic) -> 
-        ((case_info * constr * constr * constr array option * constr array),constr) journey_info_tac;
+        ((case_info * constr * constr * constr option * constr array),constr) journey_info_tac;
       otherS : (unit,constr) journey_info_tac;
       apP : (constr*(constr list),constr) journey_info_tac;
       app_reC : (constr*(constr list),constr) journey_info_tac;

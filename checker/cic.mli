@@ -102,7 +102,7 @@ type constr =
   | Const     of pconstant
   | Ind       of pinductive
   | Construct of pconstructor
-  | Case      of case_info * constr * constr array option * constr * constr array
+  | Case      of case_info * constr * constr option * constr * constr array
   | Fix       of constr pfixpoint
   | CoFix     of constr pcofixpoint
   | Proj      of projection * constr

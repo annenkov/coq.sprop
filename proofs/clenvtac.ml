@@ -43,7 +43,7 @@ let clenv_cast_meta clenv =
 	  with Not_found -> u)
       | App(f,args) -> mkApp (crec_hd f, Array.map crec args)
       | Case(ci,p,is,c,br) ->
-          mkCase (ci, crec_hd p, Option.map (Array.map crec) is, crec_hd c, Array.map crec br)
+          mkCase (ci, crec_hd p, Option.map crec is, crec_hd c, Array.map crec br)
       | Proj (p, c) -> mkProj (p, crec_hd c)
       | _ -> u
   in

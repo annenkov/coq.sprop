@@ -280,7 +280,7 @@ sig
 
   type 'a member =
   | App of 'a app_node
-  | Case of case_info * 'a * 'a array option * 'a array * Cst_stack.t
+  | Case of case_info * 'a * 'a option * 'a array * Cst_stack.t
   | Proj of int * int * projection * Cst_stack.t
   | Fix of ('a, 'a) pfixpoint * 'a t * Cst_stack.t
   | Cst of cst_member * int * int list * 'a t * Cst_stack.t
@@ -337,7 +337,7 @@ struct
 
   type 'a member =
   | App of 'a app_node
-  | Case of case_info * 'a * 'a array option * 'a array * Cst_stack.t
+  | Case of case_info * 'a * 'a option * 'a array * Cst_stack.t
   | Proj of int * int * projection * Cst_stack.t
   | Fix of ('a, 'a) pfixpoint * 'a t * Cst_stack.t
   | Cst of cst_member * int * int list * 'a t * Cst_stack.t
@@ -414,7 +414,7 @@ struct
         (f t1 t2) && (equal_rec s1' s2')
       | Case (_,t1,is1,a1,_) :: s1, Case (_,t2,is2,a2,_) :: s2 ->
         if f t1 t2 &&
-           Option.equal (CArray.equal f) is1 is2 &&
+           Option.equal f is1 is2 &&
            CArray.equal f a1 a2
         then equal_rec s1 s2
         else false
@@ -461,7 +461,7 @@ struct
         aux (f o t1 t2) l1 l2
       | Case (_,t1,is1,a1,_) :: q1, Case (_,t2,is2,a2,_) :: q2 ->
         aux (Array.fold_left2 f
-               (Option.fold_left2 (Array.fold_left2 f) (f o t1 t2) is1 is2)
+               (Option.fold_left2 f (f o t1 t2) is1 is2)
                a1 a2) q1 q2
       | Proj (n1,m1,p1,_) :: q1, Proj (n2,m2,p2,_) :: q2 ->
         aux o q1 q2
@@ -481,7 +481,7 @@ struct
 				  let le = j - i + 1 in
 				  App (0,Array.map f (Array.sub a i le), le-1)
                                | Case (info,ty,is,br,alt) ->
-                                 Case (info, f ty, Option.map (Array.map f) is, Array.map f br, alt)
+                                 Case (info, f ty, Option.map f is, Array.map f br, alt)
                                | Fix ((r,(na,rs,ty,bo)),arg,alt) ->
                                   Fix ((r,(na,rs,Array.map f ty, Array.map f bo)),map f arg,alt)
                                | Cst (cst,curr,remains,params,alt) ->
@@ -1659,7 +1659,7 @@ let meta_reducible_instance evd b =
 	  with Not_found -> None
 	  with
             | Some g -> irec (mkCase (ci,p,is,g,bl))
-            | None -> mkCase (ci,irec p,Option.map (Array.map irec) is (* not sure about this...*), c,Array.map irec bl))
+            | None -> mkCase (ci,irec p,Option.map irec is (* not sure about this...*), c,Array.map irec bl))
     | App (f,l) when EConstr.isMeta evd (strip_outer_cast evd f) ->
 	let m = destMeta evd (strip_outer_cast evd f) in
 	(match

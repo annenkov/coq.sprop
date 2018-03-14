@@ -13,7 +13,7 @@
 To ensure this file is up-to-date, 'make' now compares the md5 of cic.mli
 with a copy we maintain here:
 
-MD5 6a5efa41751e2f07f7f67678c1c6a49d checker/cic.mli
+MD5 832463f803a0b491ced1c5e925735a01 checker/cic.mli
 
 *)
 
@@ -152,7 +152,7 @@ let rec v_constr =
     [|v_puniverses v_cst|]; (* Const *)
     [|v_puniverses v_ind|]; (* Ind *)
     [|v_puniverses v_cons|]; (* Construct *)
-    [|v_caseinfo;v_constr;Opt (Array v_constr);v_constr;Array v_constr|]; (* Case *)
+    [|v_caseinfo;v_constr;Opt v_constr;v_constr;Array v_constr|]; (* Case *)
     [|v_fix|]; (* Fix *)
     [|v_cofix|]; (* CoFix *)
     [|v_proj;v_constr|] (* Proj *)

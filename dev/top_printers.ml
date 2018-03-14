@@ -272,7 +272,7 @@ let constr_display csr =
       ^","^(universes_display u)^(string_of_int j)^")"
   | Proj (p, c) -> "Proj("^(Constant.to_string (Projection.constant p))^","^term_display c ^")"
   | Case (ci,p,is,c,bl) ->
-      "MutCase(<abs>,"^(term_display p)^","^(array_opt_display is)^","^(term_display c)^","
+      "MutCase(<abs>,"^(term_display p)^","^(opt_display is)^","^(term_display c)^","
       ^(array_display bl)^")"
   | Fix ((t,i),(lna,rl,tl,bl)) ->
       "Fix(([|"^(Array.fold_right (fun x i -> (string_of_int x)^(if not(i="")
@@ -294,9 +294,9 @@ let constr_display csr =
        (fun x i -> (term_display x)^(if not(i="") then (";"^i) else ""))
        v "")^"|]"
 
-  and array_opt_display = function
+  and opt_display = function
     | None -> "None"
-    | Some v -> "Some("^(array_display v)^")"
+    | Some v -> "Some("^(term_display v)^")"
 
   and univ_display u =
     incr cnt; pp (str "with " ++ int !cnt ++ str" " ++ pr_uni u ++ fnl ())

@@ -425,7 +425,7 @@ let map sigma f c = match kind sigma c with
   | Case (ci,p,is,b,bl) ->
       let b' = f b in
       let p' = f p in
-      let is' = Option.smartmap (Array.smartmap f) is in
+      let is' = Option.smartmap f is in
       let bl' = Array.smartmap f bl in
       if b'==b && p'==p && is' == is && bl'==bl then c
       else mkCase (ci, p', is', b', bl')
@@ -479,7 +479,7 @@ let map_with_binders sigma g f l c0 = match kind sigma c0 with
     else mkEvar (e, al')
   | Case (ci, p, is, c, bl) ->
     let p' = f l p in
-    let is' = Option.smartmap (CArray.smartmap (f l)) is in (* TODO Fun1.smartmap *)
+    let is' = Option.smartmap (f l) is in (* TODO Fun1.smartmap *)
     let c' = f l c in
     let bl' = CArray.Fun1.smartmap f l bl in
     if p' == p && is' == is && c' == c && bl' == bl then c0
@@ -506,7 +506,7 @@ let iter sigma f c = match kind sigma c with
   | App (c,l) -> f c; Array.iter f l
   | Proj (p,c) -> f c
   | Evar (_,l) -> Array.iter f l
-  | Case (_,p,is,c,bl) -> f p; Option.iter (Array.iter f) is; f c; Array.iter f bl
+  | Case (_,p,is,c,bl) -> f p; Option.iter f is; f c; Array.iter f bl
   | Fix (_,(_,_,tl,bl)) -> Array.iter f tl; Array.iter f bl
   | CoFix (_,(_,_,tl,bl)) -> Array.iter f tl; Array.iter f bl
 
@@ -521,7 +521,7 @@ let iter_with_full_binders sigma g f n c =
   | LetIn (na,r,b,t,c) -> f n b; f n t; f (g (LocalDef (na, r, b, t)) n) c
   | App (c,l) -> f n c; CArray.Fun1.iter f n l
   | Evar (_,l) -> CArray.Fun1.iter f n l
-  | Case (_,p,is,c,bl) -> f n p; Option.iter (Array.iter (f n)) is; f n c; CArray.Fun1.iter f n bl
+  | Case (_,p,is,c,bl) -> f n p; Option.iter (f n) is; f n c; CArray.Fun1.iter f n bl
   | Proj (p,c) -> f n c
   | Fix (_,(lna,r,tl,bl)) ->
     Array.iter (f n) tl;
@@ -547,7 +547,7 @@ let fold sigma f acc c = match kind sigma c with
   | Evar (_,l) -> Array.fold_left f acc l
   | Case (_,p,is,c,bl) ->
     let acc = f acc p in
-    let acc = Option.fold_left (Array.fold_left f) acc is in
+    let acc = Option.fold_left f acc is in
     let acc = f acc c in
     Array.fold_left f acc bl
   | Fix (_,(lna,_,tl,bl)) ->

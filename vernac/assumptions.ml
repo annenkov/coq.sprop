@@ -172,7 +172,7 @@ let fold_constr_with_full_binders g f n acc c =
   | App (c,l) -> Array.fold_left (f n) (f n acc c) l
   | Proj (p,c) -> f n acc c
   | Evar (_,l) -> Array.fold_left (f n) acc l
-  | Case (_,p,is,c,bl) -> Array.fold_left (f n) (f n (Option.fold_left (Array.fold_left (f n)) (f n acc p) is) c) bl
+  | Case (_,p,is,c,bl) -> Array.fold_left (f n) (f n (Option.fold_left (f n) (f n acc p) is) c) bl
   | Fix (_,(lna,rl,tl,bl)) ->
       let n' = CArray.fold_left3 (fun c n r t -> g (LocalAssum (n,r,t)) c) n lna rl tl in
       let fd = Array.map2 (fun t b -> (t,b)) tl bl in

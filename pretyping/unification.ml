@@ -843,7 +843,7 @@ let rec unify_0_with_initial_metas (sigma,ms,es as subst : subst0) conv_at_top e
              let opt' = {opt with at_top = true; with_types = false} in
              Array.fold_left2 (unirec_rec curenvnb CONV {opt with at_top = true})
                (unirec_rec curenvnb CONV opt'
-                  (Option.fold_left2 (Array.fold_left2 (unirec_rec curenvnb CONV opt'))
+                  (Option.fold_left2 (unirec_rec curenvnb CONV opt')
                      (unirec_rec curenvnb CONV opt' substn p1 p2) is1 is2) c1 c2)
                cl1 cl2
            with ex when precatchable_exception ex ->

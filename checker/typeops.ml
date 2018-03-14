@@ -192,25 +192,6 @@ let check_branch_types env (c,cj) (lfj,explft) =
     | Invalid_argument _ ->
         error_number_branches env (c,cj) (Array.length explft)
 
-let check_case_is env nparams sp sc pis is =
-  match is with
-  | None ->
-    if is_sprop sc && not (is_sprop sp)
-    then error_sprop_missing_annot env
-  | Some is ->
-    if not (is_sprop sc) || is_sprop sp
-    then error_sprop_unexpected_annot env
-    else if not (Int.equal (Array.length is) (CList.length pis - nparams))
-    then error_sprop_mismatch_annot env
-    else
-      CList.iteri (fun i pi ->
-          if i >= nparams
-          then
-            let index = is.(i - nparams) in
-            try conv env pi index
-            with Reduction.NotConvertible -> error_sprop_incorrect_annot env i pi index)
-        pis
-
 (* Projection. *)
 
 let judge_of_projection env p c ct =
@@ -367,16 +348,26 @@ and execute_recdef env (names,rl,lar,vdef) i =
 and execute_array env = Array.map (execute env)
 
 and judge_of_case env ci pj is (c,cj) lfj =
-  let _, pis as indspec =
+  let pind, pis as indspec =
     try find_rectype env cj
     with Not_found -> error_case_not_inductive env (c,cj) in
   let _ = check_case_info env (fst (fst indspec)) ci in
   let (bty,rslty) = type_case_branches env indspec pj c in
   check_branch_types env (c,cj) (lfj,bty);
-  let sc = execute_type env cj in
   let _, sp = dest_arity env (snd pj) in
-  let () = check_case_is env ci.ci_npar sp sc pis is in
+  let rp = relevance_of_sort sp in
+  let () = check_case_is env cj (Inductive.relevance_of_inductive env (fst pind)) rp is in
   rslty
+
+and check_case_is env ct rt rp is =
+  match (rt, rp), is with
+  | (Relevant, Relevant | Relevant, Irrelevant | Irrelevant, Irrelevant), None -> ()
+  | (Relevant, Relevant | Relevant, Irrelevant | Irrelevant, Irrelevant), Some _ ->
+    error_sprop_unexpected_annot env
+  | (Irrelevant, Relevant), None -> error_sprop_missing_annot env
+  | (Irrelevant, Relevant), Some is ->
+    let _ = execute_type env is in
+    conv env ct is
 
 
 (* Derived functions *)

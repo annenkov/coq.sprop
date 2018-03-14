@@ -149,7 +149,7 @@ val mkConstructUi : pinductive * int -> constr
 
     [ac]{^ ith} element is ith constructor case presented as 
     {e lambda construct_args (without params). case_term } *)
-val mkCase : case_info * constr * constr array option * constr * constr array -> constr
+val mkCase : case_info * constr * constr option * constr * constr array -> constr
 
 (** If [recindxs = [|i1,...in|]]
       [funnames = [|f1,.....fn|]]
@@ -221,7 +221,7 @@ type ('constr, 'types, 'sort, 'univs) kind_of_term =
 
   | Ind       of (inductive * 'univs)                 (** A name of an inductive type defined by [Variant], [Inductive] or [Record] Vernacular-commands. *)
   | Construct of (constructor * 'univs)              (** A constructor of an inductive type defined by [Variant], [Inductive] or [Record] Vernacular-commands. *)
-  | Case      of case_info * 'constr * 'constr array option * 'constr * 'constr array
+  | Case      of case_info * 'constr * 'constr option * 'constr * 'constr array
   | Fix       of ('constr, 'types) pfixpoint
   | CoFix     of ('constr, 'types) pcofixpoint
   | Proj      of projection * 'constr
@@ -319,7 +319,7 @@ Ci(...yij...) => ti | ... end] (or [let (..y1i..) := c as x in I args
 return P in t1], or [if c then t1 else t2])
 @return [(info,c,fun args x => P,[|...|fun yij => ti| ...|])]
 where [info] is pretty-printing information *)
-val destCase : constr -> case_info * constr * constr array option * constr * constr array
+val destCase : constr -> case_info * constr * constr option * constr * constr array
 
 (** Destructs a projection *)
 val destProj : constr -> projection * constr

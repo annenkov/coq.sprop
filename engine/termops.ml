@@ -98,7 +98,7 @@ let rec pr_constr c = match kind c with
 
 and pr_case_is = function
   | None -> mt()
-  | Some is -> str"indices" ++ prvect_with_sep spc pr_constr is
+  | Some is -> str"indices" ++ pr_constr is
 
 let term_printer = ref (fun _env _sigma c -> pr_constr (EConstr.Unsafe.to_constr c))
 let print_constr_env env sigma t = !term_printer env sigma t
@@ -692,7 +692,7 @@ let map_constr_with_binders_left_to_right sigma g f l c =
       (* In v8 concrete syntax, predicate is after the term to match! *)
       let b' = f l b in
       let p' = f l p in
-      let is' = Option.map (Array.map_left (f l)) is in
+      let is' = Option.map (f l) is in
       let bl' = Array.map_left (f l) bl in
         if b' == b && p' == p && is' == is && bl' == bl then c
         else mkCase (ci, p', is', b', bl')
@@ -745,7 +745,7 @@ let map_constr_with_full_binders sigma g f l cstr =
       if Array.for_all2 (==) al al' then cstr else mkEvar (e, al')
   | Case (ci,p,is,c,bl) ->
     let p' = f l p in
-    let is' = Option.map (Array.map (f l)) is in
+    let is' = Option.map (f l) is in
     let c' = f l c in
     let bl' = Array.map (f l) bl in
     if p==p' && is' == is && c==c' && Array.for_all2 (==) bl bl' then cstr else
@@ -787,7 +787,7 @@ let fold_constr_with_full_binders sigma g f n acc c =
   | App (c,l) -> Array.fold_left (f n) (f n acc c) l
   | Proj (p,c) -> f n acc c
   | Evar (_,l) -> Array.fold_left (f n) acc l
-  | Case (_,p,is,c,bl) -> Array.fold_left (f n) (f n (Option.fold_left (Array.fold_left (f n)) (f n acc p) is) c) bl
+  | Case (_,p,is,c,bl) -> Array.fold_left (f n) (f n (Option.fold_left (f n) (f n acc p) is) c) bl
   | Fix (_,(lna,r,tl,bl)) ->
       let n' = CArray.fold_left3 (fun c n r t -> g (LocalAssum (n, r, inj t)) c) n lna r tl in
       let fd = Array.map2 (fun t b -> (t,b)) tl bl in
@@ -817,7 +817,7 @@ let iter_constr_with_full_binders g f l c =
   | App (c,args) -> f l c; Array.iter (f l) args
   | Proj (p,c) -> f l c
   | Evar (_,args) -> Array.iter (f l) args
-  | Case (_,p,is,c,bl) -> f l p; Option.iter (Array.iter (f l)) is; f l c; Array.iter (f l) bl
+  | Case (_,p,is,c,bl) -> f l p; Option.iter (f l) is; f l c; Array.iter (f l) bl
   | Fix (_,(lna,r,tl,bl)) ->
       let l' = Array.fold_left3 (fun l na r t -> g (LocalAssum (na,r,t)) l) l lna r tl in
       Array.iter (f l) tl;
