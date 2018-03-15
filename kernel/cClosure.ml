@@ -940,6 +940,20 @@ and knht info e t stk =
 
 exception InvertFail
 
+let conv : (fconstr infos -> fconstr -> fconstr -> bool) ref
+  = ref (fun _ _ _ -> assert false)
+
+let set_conv f = conv := f
+
+let check_eqn info e (c,f) =
+  let fc = mk_clos e c in
+  if not (!conv info fc f) then raise InvertFail
+
+let check_eqns info args eqns =
+  (** FIXME incorrect **)
+  let e = subs_cons (args, subs_id 0) in
+  List.iter (check_eqn info e) eqns
+
 (* Computes a weak head normal form from the result of knh. *)
 let rec knr info m stk =
   match m.term with
@@ -1009,7 +1023,7 @@ and knit info e t stk =
   let (ht,s) = knht info e t stk in
   knr info ht s
 
-and invert_match_one_index info ci args reali =
+and invert_match_one_index info ci args eqns reali =
   let open Declarations in function
     | OutVariable i -> args.(i) <- Some reali
     | OutInvert (((mind,_),ctor), trees) ->
@@ -1025,12 +1039,13 @@ and invert_match_one_index info ci args reali =
               Array.sub cargs nparams (Array.length cargs - nparams)
             in
             Array.iteri (fun i tree ->
-                Option.iter (invert_match_one_index info ci args cargs.(i)) tree)
+                Option.iter (invert_match_one_index info ci args eqns cargs.(i)) tree)
               trees
         | _ -> raise InvertFail
       end
+    | OutEqn c -> eqns := (c,reali) :: !eqns
 
-and try_match_ctor_infos info ci is =
+and try_match_ctor_infos info ci params is =
   let open Declarations in function
     | None | Some { ctor_out_tree = None }->
       assert false (* All constructors of natural sprop are invertible *)
@@ -1038,10 +1053,12 @@ and try_match_ctor_infos info ci is =
       begin try
           assert (Int.equal (Array.length trees) (Array.length is));
           let args = Array.make (Array.length ainfos) None in
-          Array.iter2 (invert_match_one_index info ci args) is trees;
+          let eqns = ref [] in
+          Array.iter2 (invert_match_one_index info ci args eqns) is trees;
           (* When there are projections this is where they're inserted *)
           let args = Array.map Option.get args in
           let () = Array.rev args in
+          let () = check_eqns info (Array.append params args) !eqns in
           Some args
         with InvertFail -> None
       end
@@ -1060,10 +1077,11 @@ and case_inversion info ci (u,p,is) c v =
   let mind = Environ.lookup_mind (fst ind) env in
   let mip = mind.mind_packets.(snd ind) in
   let nctors = Array.length mip.mind_consnames in
+  (** TODO instantiate poly univs (for eqns, comes up eg when [ctor : ind Type@{i}]) *)
   let rec loop i =
     if Int.equal i nctors then None
     else
-      match try_match_ctor_infos info ci is mip.mind_lc_info.(i) with
+      match try_match_ctor_infos info ci p is mip.mind_lc_info.(i) with
       | Some res ->
         Some (v.(i), res)
       | None -> loop (i+1)

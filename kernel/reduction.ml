@@ -727,6 +727,16 @@ let checked_universes =
     compare_instances = check_convert_instances;
     compare_cumul_instances = check_inductive_instances; }
 
+let () = CClosure.set_conv (fun infos a b ->
+    try
+      let univs = Environ.universes (info_env infos) in
+      let univs', _ = ccnv CONV false infos [] el_id el_id a b
+          (univs, checked_universes)
+      in
+      assert (univs == univs');
+      true
+    with NotConvertible -> false)
+
 let infer_eq (univs, cstrs as cuniv) u u' =
   if UGraph.check_eq univs u u' then cuniv
   else

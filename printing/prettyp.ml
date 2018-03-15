@@ -268,6 +268,7 @@ let rec pr_out_tree = function
       (function | None -> str "None" | Some tree -> pr_out_tree tree) args ++
     str "|])"
   | OutVariable i -> str "Var(" ++ Pp.int i ++ str")"
+  | OutEqn c -> str "Eqn(" ++  pr_constr c ++ str ")" [@@ocaml.warning "-3"]
 
 let pr_info = function
   | Some {ctor_arg_infos; ctor_out_tree} ->
