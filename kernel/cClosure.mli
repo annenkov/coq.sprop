@@ -100,6 +100,7 @@ type table_key = Constant.t Univ.puniverses tableKey
 type 'a infos_cache
 type 'a infos = {
   i_flags : reds;
+  i_relevances : Sorts.relevance list;
   i_cache : 'a infos_cache }
 
 val ref_value_cache: 'a infos -> table_key -> 'a option
@@ -193,6 +194,10 @@ val create_clos_infos :
 val oracle_of_infos : clos_infos -> Conv_oracle.oracle
 
 val env_of_infos : 'a infos -> env
+
+val push_relevance : 'a infos -> Sorts.relevance -> 'a infos
+
+val info_relevances : 'a infos -> Sorts.relevance list
 
 val infos_with_reds : clos_infos -> reds -> clos_infos
 
