@@ -457,5 +457,6 @@ let create_cbv_infos flgs env sigma =
     (fun old_info c -> cbv_stack_term { infos = old_info; sigma } TOP (subs_id 0) c)
     flgs
     env
+    (Evd.universes sigma)
     (Reductionops.safe_evar_value sigma) in
   { infos; sigma }

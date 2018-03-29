@@ -36,7 +36,8 @@ type 'a extended_conversion_function =
 type conv_pb = CONV | CUMUL
 
 type 'a universe_compare =
-  { (* Might raise NotConvertible *)
+  { compare_graph : 'a -> UGraph.t; (* used in reduction (case inversion) *)
+    (* Might raise NotConvertible *)
     compare_sorts : env -> conv_pb -> Sorts.t -> Sorts.t -> 'a -> 'a;
     compare_instances: flex:bool -> Univ.Instance.t -> Univ.Instance.t -> 'a -> 'a;
     compare_cumul_instances : Univ.Constraint.t -> 'a -> 'a }
